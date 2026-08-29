@@ -47,15 +47,31 @@ def test_emphasis_renders_for_empty_sections():
     assert "<em" in html
 
 
-def test_subject_leads_with_roster_moves():
+def test_subject_reports_a_move():
     subject = emailer.subject_for(digest(moves=["**Optioned** — sent to Everett."]))
-    assert "1 roster move" in subject
+    assert subject == "Mariners farm 28 Aug: 1 move"
 
 
-def test_subject_falls_back_to_standouts_then_calls_it_quiet():
-    """The watchlist playing is not news, so it does not reach the subject."""
-    assert "2 notable" in emailer.subject_for(digest(standouts=2))
-    assert "quiet night" in emailer.subject_for(digest())
+def test_a_player_arriving_or_leaving_outranks_an_ordinary_move():
+    """Who the organization has is the thing worth knowing before opening."""
+    subject = emailer.subject_for(
+        digest(arrivals=["**C Boston Smith**"], moves=["**Optioned**"])
+    )
+    assert subject == "Mariners farm 28 Aug: 1 roster change"
+
+
+def test_several_of_something_is_pluralised():
+    subject = emailer.subject_for(digest(moves=["one", "two", "three"]))
+    assert subject == "Mariners farm 28 Aug: 3 moves"
+
+
+def test_good_performances_are_not_news():
+    """Counting them trained the reader to ignore a number he could not act on."""
+    assert emailer.subject_for(digest(standouts=2)) == "Mariners farm 28 Aug"
+
+
+def test_a_night_with_no_news_is_just_the_date():
+    assert emailer.subject_for(digest()) == "Mariners farm 28 Aug"
 
 
 def test_subject_carries_the_date():
