@@ -112,13 +112,11 @@ def test_a_small_league_pool_yields_no_percentile():
 
 
 def test_age_context_reads_relative_to_the_league():
-    assert "3 years young for the TEX" in evaluation.age_context(
-        player(age=21), baseline()
-    )
-    assert "2 years old for the TEX" in evaluation.age_context(
-        player(age=26), baseline()
-    )
-    assert "typical age" in evaluation.age_context(player(age=24), baseline())
+    """Negative is young for the level, the direction that flatters a prospect."""
+    assert evaluation.age_context(player(age=21), baseline()) == "21, TEX: -3"
+    assert evaluation.age_context(player(age=26), baseline()) == "26, TEX: +2"
+    # A signed zero would read as a mistake rather than as typical for the level.
+    assert evaluation.age_context(player(age=24), baseline()) == "24, TEX: 0"
 
 
 def test_age_context_needs_both_an_age_and_a_league_average():

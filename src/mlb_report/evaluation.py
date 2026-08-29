@@ -198,7 +198,11 @@ def split_stints(
 
 def age_context(player: PlayerSeason, baseline: LeagueBaseline) -> str | None:
     """
-    A player's age against his league's average.
+    A player's age, and his age relative to level.
+
+    Written as a signed number against the league code — "TEX: -5" — because it
+    is read as a quantity rather than a sentence. Negative is young for the
+    level, which is the direction that flatters a prospect.
 
     Deliberately kept out of the rate stats. A 20-year-old posting a league
     average line in Double-A is the whole story, and folding age into wRC+
@@ -212,12 +216,10 @@ def age_context(player: PlayerSeason, baseline: LeagueBaseline) -> str | None:
     except (TypeError, ValueError):
         return None
 
-    gap = baseline.average_age - age
-    if abs(gap) < 1:
-        return f"{age}, typical age for the league"
-    years = "year" if round(abs(gap)) == 1 else "years"
-    direction = "young for" if gap > 0 else "old for"
-    return f"{age}, {round(abs(gap))} {years} {direction} the {baseline.league_name}"
+    gap = round(age - baseline.average_age)
+    # A signed zero reads as a mistake rather than as "typical for the level".
+    relative = f"{gap:+d}" if gap else "0"
+    return f"{age}, {baseline.league_name}: {relative}"
 
 
 def _ordinal(value: int) -> str:
