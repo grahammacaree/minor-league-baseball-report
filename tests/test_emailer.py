@@ -150,3 +150,16 @@ def test_level_headings_render_as_headings():
     assert "<h3" in html
     assert "AAA</h3>" in html
     assert "### AAA" not in html
+
+
+def test_a_linked_name_becomes_an_anchor():
+    html = emailer.markdown_to_html(
+        "- **1. LHP [Kade Anderson](https://www.mlb.com/player/807739)**: 6 IP"
+    )
+    assert '<a href="https://www.mlb.com/player/807739"' in html
+    assert ">Kade Anderson</a>" in html
+    assert "](" not in html
+
+
+def test_bracketed_text_that_is_not_a_link_is_left_alone():
+    assert "[not a link]" in emailer.markdown_to_html("- [not a link] and more")

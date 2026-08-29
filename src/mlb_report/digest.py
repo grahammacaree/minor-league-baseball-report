@@ -19,6 +19,22 @@ LEVEL_ORDER = ("AAA", "AA", "A+", "A", "ROK", "DSL")
 
 ARROWS = {"up": "↑", "down": "↓"}
 
+# The bare id redirects to the player's page, so the slug does not need storing.
+PLAYER_URL = "https://www.mlb.com/player/{player_id}"
+
+
+def _named(position: str, name: str, player_id: int | None) -> str:
+    """
+    A player, linked to his page where we know which player he is.
+
+    An unresolved prospect is usually an unassigned draftee, and a link that
+    guessed at him would be worse than no link.
+    """
+    label = f"{position} {name}" if position else name
+    if not player_id:
+        return label
+    return f"{position} [{name}]({PLAYER_URL.format(player_id=player_id)})".lstrip()
+
 
 @dataclass(frozen=True)
 class PlayerContext:
@@ -142,7 +158,8 @@ def _played_line(
         + (f" vs {log.opponent}" if name_opponent and log.opponent else "")
         for log in logs
     )
-    return f"**{prospect.rank}. {prospect.position} {prospect.name}**: {lines}"
+    who = _named(prospect.position, prospect.name, prospect.player_id)
+    return f"**{prospect.rank}. {who}**: {lines}"
 
 
 def _season_entry(
@@ -156,7 +173,8 @@ def _season_entry(
     Separated from the day's line because the two are read for different
     reasons: one is news, the other is the thing news gets judged against.
     """
-    header = f"**{prospect.rank}. {prospect.position} {prospect.name}**"
+    who = _named(prospect.position, prospect.name, prospect.player_id)
+    header = f"**{prospect.rank}. {who}**"
     if context and context.age:
         header += f" ({context.age})"
     if context and context.promoted:
@@ -269,8 +287,9 @@ def build(
     # A club's own top 30 is the closest thing to a verdict on a player, and it
     # is the reason he is being followed here at all.
     for transaction, ranked in arrivals or []:
+        who = _named(ranked.position, ranked.name, ranked.player_id)
         digest.arrivals.append(
-            f"**{ranked.position} {ranked.name}** — {ranked.describe()}, "
+            f"**{who}** — {ranked.describe()}, "
             f"acquired {transaction.effective_date:%-d %B}"
         )
 

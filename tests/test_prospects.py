@@ -22,6 +22,12 @@ def bundled_config(monkeypatch):
     monkeypatch.setenv("MLB_REPORT_CONFIG_HOME", "/nonexistent")
 
 
+@pytest.fixture
+def no_rankings(monkeypatch):
+    """Isolate the roster fallback from the captured rankings."""
+    monkeypatch.setattr(prospects, "_ranked_by_name", dict)
+
+
 def test_committed_list_is_a_complete_top_30(bundled_config):
     ranked = prospects.load_ranked_list()
     assert [p.rank for p in ranked] == list(range(1, 31))
@@ -33,7 +39,7 @@ def test_pitchers_are_identified_by_position():
     assert not Prospect(3, "Michael Arroyo", "OF/2B").is_pitcher
 
 
-def test_missing_ids_are_looked_up_and_cached(config_home, monkeypatch):
+def test_missing_ids_are_looked_up_and_cached(config_home, monkeypatch, no_rankings):
     calls = []
 
     def fake_sport_players(sport_id, season):
@@ -59,7 +65,7 @@ def test_missing_ids_are_looked_up_and_cached(config_home, monkeypatch):
     assert not calls, "cached ids should avoid a second roster fetch"
 
 
-def test_lookup_folds_accents(config_home, monkeypatch):
+def test_lookup_folds_accents(config_home, monkeypatch, no_rankings):
     monkeypatch.setattr(
         prospects.statsapi,
         "sport_players",
@@ -89,7 +95,7 @@ def test_no_network_when_every_id_is_known(config_home, monkeypatch):
     assert resolved[0].player_id == 807739
 
 
-def test_corrupt_cache_is_ignored(config_home, monkeypatch):
+def test_corrupt_cache_is_ignored(config_home, monkeypatch, no_rankings):
     cache_dir = config_home / "data"
     cache_dir.mkdir()
     (cache_dir / "resolved_player_ids.json").write_text("{not json")
@@ -225,3 +231,24 @@ def test_a_departure_of_someone_untracked_changes_nothing():
     remaining, departed = prospects.without_departures(tracked, [departure(999999)])
     assert remaining == tracked
     assert departed == []
+
+
+def test_the_capture_resolves_ids_without_touching_a_roster(
+    bundled_config, monkeypatch
+):
+    """The rankings were read off the same pages, so they already have the id."""
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the rankings should have answered this")
+
+    monkeypatch.setattr(prospects.statsapi, "sport_players", explode)
+    resolved = prospects.resolve_player_ids(
+        [Prospect(15, "Griffin Hugus", "RHP")], 2026
+    )
+    assert resolved[0].player_id == 702976
+
+
+def test_the_committed_list_now_resolves_in_full(bundled_config):
+    """The two names the digest used to warn about are both answered."""
+    tracked = prospects.resolve_player_ids(prospects.load_ranked_list(), 2026)
+    assert all(p.player_id for p in tracked)
