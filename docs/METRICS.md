@@ -97,31 +97,66 @@ interesting thing about the line.
 
 ## Park factors
 
-Not yet implemented. Every index stat already takes a park factor argument,
-defaulting to 1.0, so wiring them in is not a rewrite.
+Computed per component, not just for runs. A park that suppresses strikeouts
+is saying something different from one that suppresses home runs, and a
+prospect's contact rate deserves the same context as his slugging.
 
-The planned construction, per league-season:
+Construction, per league-season, in
+[`park_builder.py`](../src/mlb_report/park_builder.py):
 
-1. The schedule feed maps every `gamePk` to a venue.
-2. Each club's `stats=gameLog` gives its per-game offensive line with `isHome`.
-   Joining on `gamePk` recovers both sides of every game at a known venue.
-3. For each venue and each component (strikeouts, walks, home runs, hits per
-   ball in play, extra-base hits, runs), compare the pooled rate in games at
-   that venue against the same clubs' rate elsewhere.
-4. Regress toward 1.0 by sample size and normalize so the league mean is 1.0.
+1. The schedule feed maps every completed `gamePk` to its home club, which
+   identifies the park.
+2. Each club's `stats=gameLog` gives its per-game offensive line. Joining on
+   `gamePk` recovers both sides of every game, so each park's totals pool both
+   offences rather than only the home team's.
+3. For each park and component, compare the pooled rate there against the rate
+   the same clubs produced everywhere else.
+4. Regress toward 1.0 by sample size: `1 + (raw - 1) * PA/(PA + 4000)`.
+5. Normalize within the league so the mean is 1.0, which is what makes 1.0 mean
+   "neutral for this league".
 
-Multi-season blending:
+Hits in play are rated per ball in play; everything else per plate appearance.
+Otherwise a park that changes the strikeout rate would move the hits-in-play
+factor for the wrong reason.
+
+Blended across the three most recent completed seasons:
 
 ```
 PF = (5*PF[y-1] + 3*PF[y-2] + 1*PF[y-3]) / 9
 ```
 
+Weights are renormalized over whatever seasons exist, so a park with only one
+year of history is not dragged toward 1.0 by missing data.
+
+Applied to a player's line, the runs factor is halved toward neutral —
+`(PF + 1) / 2` — because roughly half his games are on the road.
+
+**Verification (2025 Double-A):** Amarillo, at 3,600 feet, comes out hardest on
+pitchers at 1.238 runs and 1.584 home runs. Dickey-Stephens Park in Arkansas is
+the most suppressive at 0.867 runs and 0.700 home runs, with San Antonio beside
+it; Reading's bandbox reads 1.232 for home runs. These match the parks'
+reputations without any of that being asserted anywhere in the code.
+
+The contact signal is there too: Amarillo suppresses strikeouts (0.924) while
+Binghamton inflates them (1.112).
+
+Rebuild after a season ends:
+
+```bash
+./scripts/build-park-factors --season 2026
+```
+
 ### Open questions
 
-The weights above are a convention, not a fitted result. They are a candidate
-for validation: the honest test is which weighting best predicts a park's
-next-season behavior, which becomes a tractable supervised problem once several
-seasons of per-season factors are stored.
+The 5-3-1 weights are a convention, not a fitted result, and so is the 4,000 PA
+regression constant. Both are candidates for validation: the honest test is
+which values best predict a park's next-season behavior, which becomes a
+tractable supervised problem now that several seasons of per-season factors are
+stored in `config/park_factors/`.
+
+Component factors beyond runs are computed and committed but not yet applied to
+the skill percentiles. Adjusting a contact rate for park is a more speculative
+step than adjusting run production, and is worth doing deliberately.
 
 The same applies to `RUN_VALUES`. Proper linear weights are derived from run
 expectancy by base-out state, which needs play-by-play data. Deriving

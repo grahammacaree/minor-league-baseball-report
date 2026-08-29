@@ -17,6 +17,9 @@ from . import sabermetrics as sm
 from . import statsapi
 from .config_loader import user_data_dir
 
+# Bump whenever the cached shape changes, so stale files are refetched.
+_CACHE_SCHEMA = 2
+
 _STAT_KEYS = (
     "age",
     "runs",
@@ -57,6 +60,7 @@ class PlayerSeason:
     level: str
     group: str
     stat: dict = field(repr=False)
+    team_id: int = 0
 
     @property
     def events(self) -> sm.Events:
@@ -122,6 +126,7 @@ def _merge_pool(
                 level=row.get("sport", {}).get("abbreviation", ""),
                 group=group,
                 stat={key: merged[key] for key in _STAT_KEYS if key in merged},
+                team_id=row.get("team", {}).get("id", 0),
             )
         )
     return pool
@@ -152,7 +157,11 @@ def load_pools(
     if path.exists():
         try:
             cached = json.loads(path.read_text(encoding="utf-8"))
-            if cached.get("fetched") == as_of.isoformat():
+            fresh = cached.get("fetched") == as_of.isoformat()
+            # A cache written before a field existed would silently read back
+            # as the default, which is how a park factor lookup quietly turns
+            # neutral. Version it so shape changes force a refetch.
+            if fresh and cached.get("schema") == _CACHE_SCHEMA:
                 return [PlayerSeason(**row) for row in cached["players"]]
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
@@ -166,6 +175,7 @@ def load_pools(
         json.dumps(
             {
                 "fetched": as_of.isoformat(),
+                "schema": _CACHE_SCHEMA,
                 "players": [player.__dict__ for player in pool],
             }
         ),

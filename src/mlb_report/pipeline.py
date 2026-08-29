@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from . import baselines, evaluation, fetchers, prospects, statsapi, store
+from . import baselines, evaluation, fetchers, park, prospects, statsapi, store
 from . import digest as digest_module
 from .digest import Digest, PlayerContext
 
@@ -48,6 +48,8 @@ def _contexts(
             if player.player_id in tracked_ids:
                 stints.setdefault(player.player_id, []).append(player)
 
+        parks = park.load(list(league_baselines), season)
+
         for player_id, player_stints in stints.items():
             current, previous = evaluation.split_stints(
                 player_stints, current_level.get(player_id)
@@ -56,7 +58,12 @@ def _contexts(
             if baseline is None:
                 continue
 
-            result = evaluation.evaluate(current, baseline, minimum[group])
+            result = evaluation.evaluate(
+                current,
+                baseline,
+                minimum[group],
+                park_factor=parks.runs_factor(current.team_id),
+            )
             if player_id in contexts and not result.has_enough_sample:
                 continue  # keep whichever group the player has a real season in
 
@@ -65,7 +72,10 @@ def _contexts(
                 prior_baseline = league_baselines.get(previous.league_id)
                 if prior_baseline is not None:
                     prior_result = evaluation.evaluate(
-                        previous, prior_baseline, minimum[group]
+                        previous,
+                        prior_baseline,
+                        minimum[group],
+                        park_factor=parks.runs_factor(previous.team_id),
                     )
                     prior = evaluation.render_prior(prior_result)
 
