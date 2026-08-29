@@ -41,14 +41,14 @@ def _contexts(
     contexts: dict[int, PlayerContext] = {}
     for group in ("hitting", "pitching"):
         pool = baselines.load_pools(sport_ids, season, group, as_of=report_date)
-        league_baselines = baselines.build(pool, group, minimum[group])
+        leagues = {player.league_id for player in pool}
+        parks = park.load(sorted(leagues), season)
+        league_baselines = baselines.build(pool, group, minimum[group], parks=parks)
 
         stints: dict[int, list] = {}
         for player in pool:
             if player.player_id in tracked_ids:
                 stints.setdefault(player.player_id, []).append(player)
-
-        parks = park.load(list(league_baselines), season)
 
         for player_id, player_stints in stints.items():
             current, previous = evaluation.split_stints(
@@ -63,6 +63,7 @@ def _contexts(
                 baseline,
                 minimum[group],
                 park_factor=parks.runs_factor(current.team_id),
+                park_components=parks.for_team(current.team_id),
             )
             if player_id in contexts and not result.has_enough_sample:
                 continue  # keep whichever group the player has a real season in
@@ -76,6 +77,7 @@ def _contexts(
                         prior_baseline,
                         minimum[group],
                         park_factor=parks.runs_factor(previous.team_id),
+                        park_components=parks.for_team(previous.team_id),
                     )
                     prior = evaluation.render_prior(prior_result)
 

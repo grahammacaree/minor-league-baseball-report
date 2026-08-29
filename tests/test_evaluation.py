@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from mlb_report import evaluation
+import pytest
+
+from mlb_report import baselines, evaluation
 from mlb_report.baselines import LeagueBaseline, PlayerSeason
 
 
@@ -146,6 +148,71 @@ def test_production_line_names_the_level_and_league():
     assert "AA (TEX)" in rendered
     assert "wRC+" in rendered
     assert "400 PA" in rendered
+
+
+def test_park_adjustment_divides_out_the_component_at_half_strength():
+    walks = evaluation.baselines.park_adjust(0.10, "discipline", {"walks": 1.20})
+    assert walks == pytest.approx(0.10 / 1.10)
+
+
+def test_contact_is_inverted_against_the_strikeout_factor():
+    """A park that inflates strikeouts deflates contact, so the factor flips."""
+    adjusted = evaluation.baselines.park_adjust(0.75, "contact", {"strikeouts": 1.20})
+    assert adjusted > 0.75
+
+
+def test_a_neutral_park_changes_nothing():
+    assert evaluation.baselines.park_adjust(0.25, "command", {"walks": 1.0}) == 0.25
+
+
+def test_park_adjustment_passes_missing_values_through():
+    assert (
+        evaluation.baselines.park_adjust(None, "contact", {"strikeouts": 1.2}) is None
+    )
+
+
+def test_the_player_and_the_league_are_adjusted_the_same_way():
+    """
+    The double-counting trap.
+
+    A player adjusted against an unadjusted league would be credited for his
+    park while his peers still carry theirs. Two identical players in identical
+    parks must land on the same percentile however extreme the park is.
+    """
+    neutral_pool = [
+        PlayerSeason(
+            player_id=i,
+            name=f"P{i}",
+            league_id=109,
+            league_name="TEX",
+            level="AA",
+            group="pitching",
+            stat={"battersFaced": 400, "baseOnBalls": i, "strikeOuts": 100},
+            team_id=1,
+        )
+        for i in range(1, 61)
+    ]
+
+    class Parks:
+        def __init__(self, factor):
+            self.factor = factor
+
+        def for_team(self, team_id):
+            return {"walks": self.factor, "strikeouts": 1.0}
+
+    subject = neutral_pool[30]
+    results = []
+    for factor in (1.0, 1.30):
+        parks = Parks(factor)
+        built = baselines.build(neutral_pool, "pitching", 50, parks=parks)[109]
+        results.append(
+            evaluation.evaluate(
+                subject, built, 50, park_components=parks.for_team(1)
+            ).skills
+        )
+
+    command = [{s.name: s.percentile for s in skills}["Command"] for skills in results]
+    assert command[0] == command[1]
 
 
 def test_ordinals_read_naturally():

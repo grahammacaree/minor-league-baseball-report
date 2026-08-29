@@ -1,11 +1,21 @@
 """
 Computes component park factors from game-level data.
 
-The construction is the standard with/without comparison, applied per component
-rather than only to runs: for each park, compare the rate of an event in games
-played there against the rate the same clubs produced everywhere else. Because
-each game appears in both clubs' logs, pooling by venue captures both offences,
-not just the home team's.
+The construction is a with/without comparison held to one question: what varies
+between the numerator and the denominator? For a park, we take the home club's
+own games and compare what happened there against what happened when the same
+club played elsewhere.
+
+Both sides of the ball are used, and that is what keeps it clean. A club's
+hitters face a roughly random draw of league pitching whether at home or on the
+road, and its pitchers face a roughly random draw of league hitting either way.
+The club's own roster is therefore held constant across the comparison and
+cancels; only the park differs.
+
+The tempting alternative — pooling every club's offence at a park and comparing
+against those clubs elsewhere — fails this test. Visiting hitters at a park
+always face the home staff, but not in the denominator, so a strong home
+rotation reads as a pitcher-friendly park. See scripts/validate-park-factors.
 
 This is offseason work. Nothing in the daily digest calls it.
 """
@@ -19,8 +29,8 @@ from . import statsapi
 from .park import COMPONENTS
 
 # Regression toward neutral, in plate appearances. A park with a full season of
-# roughly 5,000 PA keeps most of its observed effect; a park with a handful of
-# games keeps almost none.
+# roughly 10,000 PA across both sides keeps most of its observed effect; a park
+# with a handful of games keeps almost none.
 REGRESSION_PA = 4000
 
 
@@ -71,16 +81,14 @@ class Totals:
         return self.events[component] / denominator
 
 
-def venues_by_game(sport_id: int, season: int) -> dict[int, int]:
-    """Every completed game's home team, which is what identifies the park."""
+def home_team_by_game(sport_id: int, season: int) -> dict[int, int]:
+    """Every completed game's home club, which is what identifies the park."""
     payload = statsapi.get(
         "schedule",
         sportId=sport_id,
         season=season,
         gameType="R",
-        fields=(
-            "dates,games,gamePk,status,detailedState,teams,home,away,team,id,venue,id"
-        ),
+        fields="dates,games,gamePk,status,detailedState,teams,home,away,team,id",
     )
     mapping = {}
     for day in payload.get("dates", []):
@@ -93,70 +101,67 @@ def venues_by_game(sport_id: int, season: int) -> dict[int, int]:
     return mapping
 
 
-def collect(sport_id: int, season: int) -> dict[int, dict]:
-    """
-    Per-park totals, split into games at the park and games away from it.
-
-    Returns one entry per home club, keyed by team id, since a club and its
-    park are one to one within a season.
-    """
-    home_team_of = venues_by_game(sport_id, season)
-    teams = [
-        team
-        for team in statsapi.get("teams", sportId=sport_id, season=season).get(
-            "teams", []
-        )
-    ]
-
-    at_park: dict[int, Totals] = defaultdict(Totals)
-    elsewhere: dict[int, Totals] = defaultdict(Totals)
-    visitors: dict[int, set[int]] = defaultdict(set)
-    league_of: dict[int, int] = {}
-    club_logs: dict[int, list[tuple[int, dict]]] = {}
-
+def team_game_logs(
+    sport_id: int, season: int
+) -> tuple[dict[int, dict[int, dict]], dict]:
+    """Each club's per-game offensive line, keyed by game."""
+    teams = statsapi.get("teams", sportId=sport_id, season=season).get("teams", [])
+    logs: dict[int, dict[int, dict]] = {}
     for team in teams:
-        team_id = team["id"]
-        league_of[team_id] = team.get("league", {}).get("id", 0)
-        splits = statsapi.get(
-            f"teams/{team_id}/stats",
+        payload = statsapi.get(
+            f"teams/{team['id']}/stats",
             stats="gameLog",
             group="hitting",
             season=season,
             sportId=sport_id,
         )
         rows = [
-            split
-            for block in splits.get("stats", [])
-            for block_splits in [block["splits"]]
-            for split in block_splits
+            split for block in payload.get("stats", []) for split in block["splits"]
         ]
-        club_logs[team_id] = [
-            (row.get("game", {}).get("gamePk"), row.get("stat", {})) for row in rows
-        ]
-
-    for team_id, rows in club_logs.items():
-        for game_pk, stat in rows:
-            park = home_team_of.get(game_pk)
-            if park is None:
-                continue
-            at_park[park].add(stat)
-            visitors[park].add(team_id)
-
-    # A club's games elsewhere are every game it played at a different park.
-    for park, clubs in visitors.items():
-        for team_id in clubs:
-            for game_pk, stat in club_logs.get(team_id, []):
-                if home_team_of.get(game_pk) not in (None, park):
-                    elsewhere[park].add(stat)
-
-    return {
-        park: {
-            "at": at_park[park],
-            "elsewhere": elsewhere[park],
-            "league_id": league_of.get(park, 0),
+        logs[team["id"]] = {
+            row["game"]["gamePk"]: row.get("stat", {})
+            for row in rows
+            if row.get("game", {}).get("gamePk")
         }
-        for park in at_park
-    }
+    return logs, {team["id"]: team for team in teams}
+
+
+def collect(sport_id: int, season: int) -> dict[int, dict]:
+    """
+    Per-park totals, split into the home club's games there and elsewhere.
+
+    Both clubs' lines are counted in every game, so each park's totals cover
+    the full run environment rather than one side of it.
+    """
+    home_of = home_team_by_game(sport_id, season)
+    logs, teams = team_game_logs(sport_id, season)
+
+    # Which clubs played in each game, so a game's opposing line can be found.
+    sides: dict[int, list[int]] = defaultdict(list)
+    for team_id, games in logs.items():
+        for game_pk in games:
+            sides[game_pk].append(team_id)
+
+    collected = {}
+    for club, games in logs.items():
+        at_home, on_road = Totals(), Totals()
+        for game_pk, own_line in games.items():
+            venue_host = home_of.get(game_pk)
+            if venue_host is None:
+                continue
+            opponents = [side for side in sides.get(game_pk, []) if side != club]
+            bucket = at_home if venue_host == club else on_road
+            bucket.add(own_line)
+            for opponent in opponents:
+                bucket.add(logs[opponent].get(game_pk, {}))
+
+        if at_home.plate_appearances and on_road.plate_appearances:
+            collected[club] = {
+                "at": at_home,
+                "elsewhere": on_road,
+                "league_id": teams[club].get("league", {}).get("id", 0),
+            }
+    return collected
 
 
 def _regress(raw: float, sample: float) -> float:

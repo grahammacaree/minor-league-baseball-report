@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from . import baselines
 from . import sabermetrics as sm
 from .baselines import (
     HITTING_METRICS,
@@ -81,6 +82,7 @@ def evaluate(
     baseline: LeagueBaseline,
     minimum_sample: int,
     park_factor: float = 1.0,
+    park_components: dict[str, float] | None = None,
 ) -> Evaluation:
     is_pitcher = player.group == "pitching"
     metrics = PITCHING_METRICS if is_pitcher else HITTING_METRICS
@@ -98,6 +100,10 @@ def evaluate(
         # so no skill line is produced at all.
         for name in HEADLINE_SKILLS[player.group]:
             value = metrics[name](player.stat)
+            # Adjusted with the same factor the league distribution was built
+            # from, or the comparison is between different things.
+            if park_components is not None:
+                value = baselines.park_adjust(value, name, park_components)
             percentile = baseline.percentile(name, value)
             if percentile is not None and name in INVERTED_METRICS:
                 percentile = 100 - percentile

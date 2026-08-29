@@ -81,6 +81,49 @@ Percentiles appear only once a player clears the sample floor in
 `config/settings.json` (50 plate appearances or batters faced). Below that a
 percentile is noise presented as insight, so no skill line is produced at all.
 
+### Park adjustment, and the trap in it
+
+Skills are park-adjusted, each against the component it belongs to — contact
+and whiffs against the strikeout factor, power against extra-base hits,
+discipline and command against walks. Contact is inverted first, since a park
+that inflates strikeouts deflates contact.
+
+**The entire league pool is re-ranked on adjusted values.** Adjusting one
+player and looking him up in an unadjusted distribution would double-count,
+crediting him for his park while his peers are still measured with theirs baked
+in. A test pins this: two identical players in identical parks must land on the
+same percentile no matter how extreme the park.
+
+Because factors are normalized to a league mean of 1.0, the distribution itself
+barely moves — Texas League strikeout rate at the 50th percentile shifts by
+0.001 — so what changes is rank order, not scale. The effect is largest in the
+crowded middle of a distribution and smallest at the tails, where a genuine
+outlier has nobody to trade places with. A 40.5% strikeout rate is the 99th
+percentile in the Texas League before and after adjustment, even though
+Dickey-Stephens inflates strikeouts.
+
+### Whiff rate is not park-independent
+
+Contact and whiff rates are adjusted rather than treated as clean skill
+measures, because parks visibly move them. Altitude predicts the strikeout
+factor in two independent leagues:
+
+| League (2025) | correlation(altitude, K factor) | parks |
+|---|---|---|
+| Triple-A | −0.66 | 10 |
+| Double-A | −0.64 | 10 |
+
+Thinner air flattens breaking balls, so high-altitude parks suppress
+strikeouts: El Paso at 3,740 feet sits at 0.921 and Reno at 0.937, against
+Sacramento at sea level at 1.100. Variation altitude cannot explain — Corpus
+Christi is 30 feet up at 1.055 — is consistent with backdrop and sightline
+effects.
+
+The honest limitation: what is measured is **strikeouts**, which bundle
+swinging strikes with called strikes and hitter approach. Game logs carry no
+swing data, so a true swinging-strike factor would need play-by-play from the
+game feed, roughly 1,800 games per league-season.
+
 ## Age relative to level
 
 Reported next to the numbers and deliberately never inside them. A 20-year-old
@@ -101,16 +144,49 @@ Computed per component, not just for runs. A park that suppresses strikeouts
 is saying something different from one that suppresses home runs, and a
 prospect's contact rate deserves the same context as his slugging.
 
-Construction, per league-season, in
-[`park_builder.py`](../src/mlb_report/park_builder.py):
+### What the comparison isolates
 
-1. The schedule feed maps every completed `gamePk` to its home club, which
-   identifies the park.
+The only question worth asking of a park factor is what differs between the
+numerator and the denominator. It should be the park and nothing else.
+
+So a park's factor comes from **the home club's own games, both sides of the
+ball, at home against on the road**. That club's hitters face a roughly random
+draw of league pitching whether home or away, and its pitchers face a roughly
+random draw of league hitting either way. The club's roster therefore sits on
+both sides of the ratio and cancels.
+
+Two alternatives fail this test, and the failure is measurable rather than
+theoretical. Pooling every club's offence at a park, or using only visiting
+offence, puts visiting hitters against the home staff in the numerator but not
+in the denominator — so a strong home rotation reads as a pitcher-friendly
+park.
+
+`scripts/validate-park-factors` measures the leakage by correlating each park's
+strikeout factor against the home staff's strikeout rate *in road games*, which
+the park cannot legitimately influence:
+
+| construction | Double-A | Triple-A |
+|---|---|---|
+| home club, both sides (used) | −0.26 | −0.21 |
+| pooled offence | +0.20 | +0.21 |
+| visiting offence only | +0.52 | +0.36 |
+
+Year-over-year agreement is a poor tiebreaker and is reported with a warning: a
+contaminated estimator inherits the stability of whatever contaminates it, and
+pitching staffs persist across seasons. On runs the clean construction matches
+the pooled one anyway (+0.70 against +0.69).
+
+The residual −0.26 cannot be leakage, since the home staff is structurally
+absent from the comparison. The likely explanation is roster construction —
+organizations in strikeout-suppressing parks tending to carry higher-strikeout
+arms — which would be a real correlation rather than a measurement artifact.
+
+### Steps
+
+1. The schedule feed maps every completed `gamePk` to its home club.
 2. Each club's `stats=gameLog` gives its per-game offensive line. Joining on
-   `gamePk` recovers both sides of every game, so each park's totals pool both
-   offences rather than only the home team's.
-3. For each park and component, compare the pooled rate there against the rate
-   the same clubs produced everywhere else.
+   `gamePk` recovers the opposing line, so both sides of every game are counted.
+3. For each club and component, compare its home games against its road games.
 4. Regress toward 1.0 by sample size: `1 + (raw - 1) * PA/(PA + 4000)`.
 5. Normalize within the league so the mean is 1.0, which is what makes 1.0 mean
    "neutral for this league".
@@ -132,18 +208,17 @@ Applied to a player's line, the runs factor is halved toward neutral —
 `(PF + 1) / 2` — because roughly half his games are on the road.
 
 **Verification (2025 Double-A):** Amarillo, at 3,600 feet, comes out hardest on
-pitchers at 1.238 runs and 1.584 home runs. Dickey-Stephens Park in Arkansas is
-the most suppressive at 0.867 runs and 0.700 home runs, with San Antonio beside
-it; Reading's bandbox reads 1.232 for home runs. These match the parks'
-reputations without any of that being asserted anywhere in the code.
+pitchers at 1.297 runs and 1.598 home runs. Dickey-Stephens Park in Arkansas is
+the most suppressive at 0.820 runs and 0.682 home runs, with San Antonio beside
+it. These match the parks' reputations without any of that being asserted
+anywhere in the code.
 
-The contact signal is there too: Amarillo suppresses strikeouts (0.924) while
-Binghamton inflates them (1.112).
-
-Rebuild after a season ends:
+Rebuild after a season ends, and check the construction still isolates the
+park:
 
 ```bash
 ./scripts/build-park-factors --season 2026
+./scripts/validate-park-factors --sport 12 --seasons 2025 2026
 ```
 
 ### Open questions
@@ -154,9 +229,9 @@ which values best predict a park's next-season behavior, which becomes a
 tractable supervised problem now that several seasons of per-season factors are
 stored in `config/park_factors/`.
 
-Component factors beyond runs are computed and committed but not yet applied to
-the skill percentiles. Adjusting a contact rate for park is a more speculative
-step than adjusting run production, and is worth doing deliberately.
+A swinging-strike factor built from play-by-play would separate whiffs from
+called strikes, which the strikeout factor currently conflates. That is the
+single largest improvement available to the contact and command percentiles.
 
 The same applies to `RUN_VALUES`. Proper linear weights are derived from run
 expectancy by base-out state, which needs play-by-play data. Deriving

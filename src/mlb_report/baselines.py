@@ -12,10 +12,16 @@ import json
 from bisect import bisect_left
 from dataclasses import dataclass, field
 from datetime import date
+from typing import Protocol
 
 from . import sabermetrics as sm
 from . import statsapi
 from .config_loader import user_data_dir
+
+
+class ParkLookup(Protocol):
+    def for_team(self, team_id: int | None) -> dict[str, float]: ...
+
 
 # Bump whenever the cached shape changes, so stale files are refetched.
 _CACHE_SCHEMA = 2
@@ -221,10 +227,57 @@ PITCHING_METRICS = {
 INVERTED_METRICS = {"strikeout_rate", "command"}
 
 
+# Which park component each skill is measured against. A park that moves
+# strikeouts moves a pitcher's strikeout rate and a hitter's alike, so the
+# same factor serves both.
+METRIC_COMPONENTS = {
+    "contact": "strikeouts",
+    "power": "extra_base_hits",
+    "discipline": "walks",
+    "solid_contact": "hits_in_play",
+    "strikeout_rate": "strikeouts",
+    "contact_suppression": "strikeouts",
+    "damage_limitation": "hits_in_play",
+    "command": "walks",
+    "strikeouts_minus_walks": "strikeouts",
+}
+
+
+def park_adjust(
+    value: float | None, metric: str, factor: dict[str, float]
+) -> float | None:
+    """
+    Divide a rate by its park's effect on that component, at half strength.
+
+    Half, because roughly half a player's games are on the road. Contact is the
+    inverted case: a park that inflates strikeouts deflates contact, so the
+    factor is flipped before it is applied.
+    """
+    if value is None:
+        return None
+    component = METRIC_COMPONENTS.get(metric)
+    if component is None:
+        return value
+    raw = factor.get(component, 1.0)
+    if metric == "contact":
+        raw = 1 / raw if raw else 1.0
+    return value / ((raw + 1.0) / 2)
+
+
 def build(
-    pool: list[PlayerSeason], group: str, minimum_sample: int
+    pool: list[PlayerSeason],
+    group: str,
+    minimum_sample: int,
+    parks: ParkLookup | None = None,
 ) -> dict[int, LeagueBaseline]:
-    """One baseline per league represented in the pool."""
+    """
+    One baseline per league represented in the pool.
+
+    When park factors are supplied the whole league is ranked on adjusted
+    values. Adjusting one player and looking him up in an unadjusted
+    distribution would double-count, crediting him for his park while his peers
+    are still measured with theirs baked in.
+    """
     metrics = PITCHING_METRICS if group == "pitching" else HITTING_METRICS
     by_league: dict[int, list[PlayerSeason]] = {}
     for player in pool:
@@ -266,11 +319,13 @@ def build(
         baseline.average_age = sum(ages) / len(ages) if ages else None
 
         for name, metric in metrics.items():
-            values = sorted(
-                value
-                for value in (metric(player.stat) for player in qualified)
-                if value is not None
-            )
-            baseline.distributions[name] = values
+            values = []
+            for player in qualified:
+                value = metric(player.stat)
+                if parks is not None:
+                    value = park_adjust(value, name, parks.for_team(player.team_id))
+                if value is not None:
+                    values.append(value)
+            baseline.distributions[name] = sorted(values)
         baselines[league_id] = baseline
     return baselines
