@@ -1,0 +1,86 @@
+name: Daily farm digest
+
+# 13:00 UTC is early morning on the west coast, by which point every affiliate
+# has finished the previous day's game, including the late Pacific Coast League
+# starts. The digest reports on yesterday by default.
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      report_date:
+        description: "Day to report on (YYYY-MM-DD, default yesterday)"
+        type: string
+      dry_run:
+        description: "Print the digest instead of emailing it"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare config home
+        run: echo "MLB_REPORT_CONFIG_HOME=${RUNNER_TEMP}/mlb-report" >> "$GITHUB_ENV"
+
+      # The game log store is the season's accumulated history, and trends are
+      # computed from it. Losing it would not break a run, but it would flatten
+      # every streak until the store refilled.
+      - name: Restore history from the last run
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: mlb-report-history
+          path: ${{ runner.temp }}/mlb-report/data
+          workflow: daily-digest.yml
+          if_no_artifact_found: ignore
+
+      - name: Write per-user config
+        env:
+          MLB_REPORT_USER_JSON: ${{ secrets.MLB_REPORT_USER_JSON }}
+          MLB_REPORT_USER_ENV: ${{ secrets.MLB_REPORT_USER_ENV }}
+        run: |
+          mkdir -p "$MLB_REPORT_CONFIG_HOME/data"
+          if [ -z "$MLB_REPORT_USER_JSON" ] || [ -z "$MLB_REPORT_USER_ENV" ]; then
+            echo "::error::Missing secrets. See docs/GITHUB_SECRETS.md"
+            exit 1
+          fi
+          printf '%s' "$MLB_REPORT_USER_JSON" > "$MLB_REPORT_CONFIG_HOME/user.json"
+          python3 -m json.tool "$MLB_REPORT_CONFIG_HOME/user.json" > /dev/null
+          printf '%s' "$MLB_REPORT_USER_ENV" > "$MLB_REPORT_CONFIG_HOME/.env"
+          chmod 600 "$MLB_REPORT_CONFIG_HOME/user.json" "$MLB_REPORT_CONFIG_HOME/.env"
+
+      - name: Send digest
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.report_date }}" ]; then
+            ARGS="--date ${{ inputs.report_date }}"
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          ./scripts/run $ARGS
+
+      # Uploaded even when the send fails: the day's fetched logs are still
+      # worth keeping, and rebuilding them costs a full crawl.
+      - name: Persist history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-report-history
+          path: ${{ runner.temp }}/mlb-report/data/game_logs_*.ndjson
+          retention-days: 400
+          if-no-files-found: warn
