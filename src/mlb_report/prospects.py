@@ -6,8 +6,10 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
 
-from . import statsapi
+from . import rankings, statsapi
 from .config_loader import load_json, user_data_dir
+from .models import Transaction
+from .rankings import Ranked
 
 _RESOLVED_IDS_FILE = "resolved_player_ids.json"
 
@@ -99,35 +101,125 @@ def _roster_index(season: int) -> dict[str, int]:
     return index
 
 
+def _ranked_by_name() -> dict[str, int]:
+    """
+    Name to player id, from the captured rankings.
+
+    They were read off the same pages the tracked list came from, so a prospect
+    missing an id here is usually one the capture already resolved.
+    """
+    try:
+        ranked = rankings.load()
+    except (FileNotFoundError, KeyError, json.JSONDecodeError):
+        return {}
+    return {_normalize(entry.name): entry.player_id for entry in ranked.values()}
+
+
 def resolve_player_ids(prospects: list[Prospect], season: int) -> list[Prospect]:
     """
     Fill in ids for prospects the ranking list does not carry one for.
 
+    The captured rankings are asked first: they were read off the same pages
+    this list came from and already carry an id for everyone on them, which
+    settles most cases without a request.
+
     Complex-level players often have no MLB profile page when they are first
-    ranked, so the id is looked up from affiliate rosters and cached. Anyone who
-    still cannot be matched is returned unresolved rather than dropped, so the
-    digest can report the gap.
+    ranked, so anyone still missing is looked up from affiliate rosters and
+    cached. Anyone who still cannot be matched is returned unresolved rather
+    than dropped, so the digest can report the gap.
     """
     missing = [p for p in prospects if p.player_id is None]
     if not missing:
         return prospects
 
     cache = _read_cache()
-    unresolved = [p for p in missing if _normalize(p.name) not in cache]
+    known = {**_ranked_by_name(), **cache}
+
+    unresolved = [p for p in missing if _normalize(p.name) not in known]
     if unresolved:
         index = _roster_index(season)
         for prospect in unresolved:
             key = _normalize(prospect.name)
             if found := index.get(key):
                 cache[key] = found
+                known[key] = found
         _write_cache(cache)
 
     return [
         p
         if p.player_id is not None
-        else Prospect(p.rank, p.name, p.position, cache.get(_normalize(p.name)))
+        else Prospect(p.rank, p.name, p.position, known.get(_normalize(p.name)))
         for p in prospects
     ]
+
+
+def without_departures(
+    tracked: list[Prospect], departures: list[Transaction]
+) -> tuple[list[Prospect], list[Transaction]]:
+    """
+    Drop players the organization has traded away.
+
+    A committed list outlives the roster it describes. Until the next capture a
+    departed prospect would keep being fetched, reported on, and counted as one
+    of the ten the digest follows most closely — all for another team's farm
+    system.
+
+    Ranks are left as they were rather than closed up. They are Pipeline's
+    numbering, not ours to renumber, and a gap at 7 is a truer description of
+    the list than promoting everyone below it.
+    """
+    gone = {move.player_id for move in departures}
+    if not gone:
+        return tracked, []
+    remaining = [p for p in tracked if p.player_id not in gone]
+    departed = [
+        move for move in departures if move.player_id in {p.player_id for p in tracked}
+    ]
+    return remaining, sorted(departed, key=lambda m: (m.effective_date, m.player_name))
+
+
+def with_acquisitions(
+    tracked: list[Prospect],
+    arrivals: list[Transaction],
+    ranked: dict[int, Ranked],
+) -> tuple[list[Prospect], list[tuple[Transaction, Ranked]]]:
+    """
+    Add acquired players that somebody had in their top 30 to the tracked list.
+
+    Being ranked anywhere is the test. It is the same judgement the committed
+    list is built from, only applied to the org a player is arriving from, and
+    it is far sharper than asking how old he is: a 24-year-old nobody ranked is
+    organizational depth, and a 24-year-old ranked fourth is the reason this
+    exists.
+
+    They are appended below the committed thirty rather than slotted into it.
+    Where an acquisition belongs in our own order is a judgement for the next
+    capture to make; until then he is followed without displacing anyone or
+    pushing into the watchlist, where he would crowd out a top ten prospect on
+    the strength of another club's opinion.
+    """
+    known = {p.player_id for p in tracked if p.player_id}
+    acquired: list[tuple[Transaction, Ranked]] = []
+    for transaction in arrivals:
+        entry = ranked.get(transaction.player_id)
+        if entry is None or transaction.player_id in known:
+            continue
+        known.add(transaction.player_id)
+        acquired.append((transaction, entry))
+
+    # Best prospect first, so a headline acquisition leads.
+    acquired.sort(key=lambda pair: pair[1].rank)
+    next_rank = max((p.rank for p in tracked), default=0)
+    added = [
+        Prospect(
+            rank=next_rank + offset,
+            name=entry.name,
+            position=entry.position,
+            player_id=entry.player_id,
+        )
+        for offset, (_, entry) in enumerate(acquired, start=1)
+    ]
+    return tracked + added, acquired
 
 
 def tracked_prospects(season: int) -> list[Prospect]:

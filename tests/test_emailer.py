@@ -48,15 +48,31 @@ def test_emphasis_renders_for_empty_sections():
     assert "<em" in html
 
 
-def test_subject_leads_with_roster_moves():
+def test_subject_reports_a_move():
     subject = emailer.subject_for(digest(moves=["**Optioned** — sent to Everett."]))
-    assert "1 roster move" in subject
+    assert subject == "Mariners farm 28 Aug: 1 move"
 
 
-def test_subject_falls_back_to_standouts_then_calls_it_quiet():
-    """The watchlist playing is not news, so it does not reach the subject."""
-    assert "2 notable" in emailer.subject_for(digest(standouts=2))
-    assert "quiet night" in emailer.subject_for(digest())
+def test_a_player_arriving_or_leaving_outranks_an_ordinary_move():
+    """Who the organization has is the thing worth knowing before opening."""
+    subject = emailer.subject_for(
+        digest(arrivals=["**C Boston Smith**"], moves=["**Optioned**"])
+    )
+    assert subject == "Mariners farm 28 Aug: 1 roster change"
+
+
+def test_several_of_something_is_pluralised():
+    subject = emailer.subject_for(digest(moves=["one", "two", "three"]))
+    assert subject == "Mariners farm 28 Aug: 3 moves"
+
+
+def test_good_performances_are_not_news():
+    """Counting them trained the reader to ignore a number he could not act on."""
+    assert emailer.subject_for(digest(standouts=2)) == "Mariners farm 28 Aug"
+
+
+def test_a_night_with_no_news_is_just_the_date():
+    assert emailer.subject_for(digest()) == "Mariners farm 28 Aug"
 
 
 def test_subject_carries_the_date():
@@ -215,3 +231,16 @@ def test_a_malformed_sender_stops_the_send(monkeypatch, delivery):
     monkeypatch.setattr(cli.config_loader, "load_user", lambda: {})
     assert cli._deliver(digest(moves=["a move"]), "the digest") == 1
     assert delivery == []
+
+
+def test_a_linked_name_becomes_an_anchor():
+    html = emailer.markdown_to_html(
+        "- **1. LHP [Kade Anderson](https://www.mlb.com/player/807739)**: 6 IP"
+    )
+    assert '<a href="https://www.mlb.com/player/807739"' in html
+    assert ">Kade Anderson</a>" in html
+    assert "](" not in html
+
+
+def test_bracketed_text_that_is_not_a_link_is_left_alone():
+    assert "[not a link]" in emailer.markdown_to_html("- [not a link] and more")

@@ -139,5 +139,111 @@ def transactions(
     return sorted(moves, key=lambda move: (move.effective_date, move.player_name))
 
 
+def club_shares(
+    player_id: int, group: str, season: int, sport_id: int
+) -> dict[int, float]:
+    """
+    How a player's time at one level divides between the clubs he played for.
+
+    The leaderboards pool a within-level trade into a single row credited to
+    whichever club he finished with, so the split has to be asked for by name.
+    The per-player feed does break it out, and returns an unattributed total
+    alongside the clubs, which is dropped.
+
+    Returns an empty mapping for the ordinary case of one club, so callers can
+    treat "nothing to blend" and "nothing to see" alike.
+    """
+    payload = statsapi.get(
+        f"people/{player_id}/stats",
+        stats="season",
+        group=group,
+        season=season,
+        sportId=sport_id,
+    )
+    shares: dict[int, float] = {}
+    for block in payload.get("stats", []):
+        for split in block.get("splits", []):
+            team_id = (split.get("team") or {}).get("id")
+            if not team_id:
+                continue  # the combined row, which is what we are unpicking
+            stat = split.get("stat", {})
+            played = stat.get("plateAppearances") or stat.get("battersFaced") or 0
+            if played:
+                shares[team_id] = shares.get(team_id, 0.0) + float(played)
+    return shares if len(shares) > 1 else {}
+
+
+# Ways a player crosses an organization's boundary. Minor-league free agent
+# signings are left out: they are mostly depth, and would bury the case this is
+# here to catch — a ranked prospect moving between capture points.
+CROSSING_TYPES = ("Trade", "Claimed Off Waivers", "Rule 5 Draft", "Selected")
+
+
+def crossings(
+    parent_org_id: int,
+    season: int,
+    since: date,
+    until: date,
+) -> tuple[list[Transaction], list[Transaction]]:
+    """
+    Players who joined the organization from outside it, and who left it.
+
+    The rankings are captured twice a year, so a prospect acquired in July is
+    invisible to a list committed in March, and one traded away in July stays on
+    it long after he stopped being ours. Both directions are read from the same
+    scan, since the feed has to be walked either way.
+
+    A move within the organization has both clubs inside it, so comparing the
+    two ends is what separates a crossing from a promotion.
+    """
+    inside = {team["id"] for team in statsapi.affiliate_teams(parent_org_id, season)}
+    inside.add(parent_org_id)
+
+    def ends(raw: dict) -> tuple[bool, bool] | None:
+        if raw.get("typeDesc") not in CROSSING_TYPES:
+            return None
+        # A trade carries a row for the cash as well as for the players, and
+        # that one names no person.
+        if not raw.get("person", {}).get("id"):
+            return None
+        to_inside = (raw.get("toTeam") or {}).get("id") in inside
+        from_inside = (raw.get("fromTeam") or {}).get("id") in inside
+        return to_inside, from_inside
+
+    def build(raw: dict, effective: str) -> Transaction:
+        return Transaction(
+            player_id=raw["person"]["id"],
+            player_name=raw.get("person", {}).get("fullName", ""),
+            effective_date=date.fromisoformat(effective),
+            type_desc=raw.get("typeDesc", ""),
+            description=raw.get("description", ""),
+        )
+
+    seen: set[tuple[int, str]] = set()
+    joined: list[Transaction] = []
+    left: list[Transaction] = []
+    for team_id in sorted(inside):
+        for raw in statsapi.transactions(team_id, since.isoformat(), until.isoformat()):
+            effective = raw.get("effectiveDate") or raw.get("date")
+            if not effective:
+                continue
+            crossing = ends(raw)
+            if crossing is None:
+                continue
+            to_inside, from_inside = crossing
+            if to_inside == from_inside:
+                continue  # internal move, or nothing to do with us
+            key = (raw["person"]["id"], effective)
+            if key in seen:
+                continue
+            seen.add(key)
+            (joined if to_inside else left).append(build(raw, effective))
+
+    def order(move: Transaction) -> tuple[date, str]:
+        return move.effective_date, move.player_name
+
+    return sorted(joined, key=order), sorted(left, key=order)
+
+
 def lookback_window(as_of: date, days: int) -> tuple[date, date]:
     return as_of - timedelta(days=days), as_of

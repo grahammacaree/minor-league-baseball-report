@@ -119,11 +119,19 @@ _STYLE = {
         "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;"
         "background:#f5f5f7;padding:1px 5px;border-radius:4px"
     ),
+    # Undecorated, because a name in a heading is already prominent and an
+    # underline under every one of them would be noise.
+    "link": "color:inherit;text-decoration:none",
 }
+
+# A markdown link. The URL is deliberately narrow: no spaces, no closing
+# parenthesis, and a scheme we wrote ourselves.
+_LINK = re.compile(r"\[([^\]]+)\]\((https://[^\s)]+)\)")
 
 
 def _inline_html(text: str) -> str:
     text = _CODE.sub(rf'<code style="{_STYLE["code"]}">\1</code>', text)
+    text = _LINK.sub(rf'<a href="\2" style="{_STYLE["link"]}">\1</a>', text)
     text = _BOLD.sub(r"<strong>\1</strong>", text)
     return re.sub(r"_(.+?)_", rf'<em style="{_STYLE["em"]}">\1</em>', text)
 
@@ -191,17 +199,24 @@ def markdown_to_html(text: str) -> str:
 
 def subject_for(digest: Digest) -> str:
     """
-    A subject line that says whether the email is worth opening now.
+    A subject line that says whether the email needs opening now.
 
-    Roster moves lead because they are the only thing that might need acting
-    on; otherwise the count of standout performances is the signal.
+    Only news leads: someone arriving, leaving, or moving between levels is the
+    sort of thing worth knowing before opening anything. A good night at the
+    plate is not, and counting good nights in the subject line only trained the
+    reader to ignore a number that was never actionable.
     """
     date_label = f"{digest.report_date:%-d %b}"
-    if digest.moves:
-        return f"Mariners farm {date_label}: {len(digest.moves)} roster move(s)"
-    if digest.standouts:
-        return f"Mariners farm {date_label}: {digest.standouts} notable performance(s)"
-    return f"Mariners farm {date_label}: quiet night"
+    headline = _plural(len(digest.arrivals) + len(digest.departures), "roster change")
+    moves = _plural(len(digest.moves), "move")
+    news = headline or moves
+    return f"Mariners farm {date_label}{f': {news}' if news else ''}"
+
+
+def _plural(count: int, noun: str) -> str:
+    if not count:
+        return ""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def send(

@@ -4,3 +4,8 @@
 # Development
 pytest>=8,<9
 ruff>=0.6,<1
+
+# Capturing the Pipeline rankings, twice a year. mlb.com serves five prospects
+# to a non-browser client and the rest only after a click, so that one job
+# needs a real browser. Nothing the daily run imports touches this.
+playwright>=1.44,<2

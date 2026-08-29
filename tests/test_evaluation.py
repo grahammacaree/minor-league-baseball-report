@@ -14,7 +14,7 @@ BATTED_BALL_KEYS = (
 )
 
 
-def player(level="AA", league_id=109, group="hitting", **stat):
+def player(level="AA", league_id=109, group="hitting", team_name="", **stat):
     base = {
         "plateAppearances": 400,
         "atBats": 350,
@@ -51,6 +51,7 @@ def player(level="AA", league_id=109, group="hitting", **stat):
         level=level,
         group=group,
         stat=base,
+        team_name=team_name,
     )
 
 
@@ -164,6 +165,15 @@ def test_age_context_reads_relative_to_the_league():
     assert evaluation.age_context(player(age=24), baseline()) == "AA, 24yo, TEX 0"
 
 
+def test_age_context_names_the_club_beside_the_level():
+    """Otherwise a traded player's header and his prior line both read "AA"."""
+    traded = player(age=21, team_name="Arkansas Travelers")
+    assert (
+        evaluation.age_context(traded, baseline())
+        == "AA Arkansas Travelers, 21yo, TEX -3"
+    )
+
+
 def test_age_context_keeps_the_level_when_the_age_is_missing():
     """The level is worth stating on its own; the comparison is what needs both."""
     assert evaluation.age_context(player(age=None), baseline()) == "AA"
@@ -173,9 +183,9 @@ def test_age_context_keeps_the_level_when_the_age_is_missing():
 def test_the_current_stint_is_the_level_of_the_latest_game():
     aa = player(level="AA", plateAppearances=400)
     aaa = player(level="AAA", plateAppearances=100)
-    current, previous = evaluation.split_stints([aa, aaa], current_level="AAA")
+    current, earlier = evaluation.split_stints([aa, aaa], current_level="AAA")
     assert current.level == "AAA"
-    assert previous.level == "AA"
+    assert [stint.level for stint in earlier] == ["AA"]
 
 
 def test_the_biggest_stint_is_used_when_the_level_is_unknown():
@@ -186,9 +196,33 @@ def test_the_biggest_stint_is_used_when_the_level_is_unknown():
 
 
 def test_a_single_stint_has_no_previous_level():
-    current, previous = evaluation.split_stints([player()], current_level="AA")
+    current, earlier = evaluation.split_stints([player()], current_level="AA")
     assert current.level == "AA"
-    assert previous is None
+    assert earlier == []
+
+
+def test_every_level_left_behind_is_kept_largest_first():
+    """A promotion is exactly when the stint behind him is the better sample."""
+    a_plus = player(level="A+", plateAppearances=216)
+    aa = player(level="AA", plateAppearances=186)
+    single_a = player(level="A", plateAppearances=34)
+    current, earlier = evaluation.split_stints(
+        [a_plus, aa, single_a], current_level="AA"
+    )
+    assert current.level == "AA"
+    assert [stint.level for stint in earlier] == ["A+", "A"]
+
+
+def test_a_stint_is_named_by_club_as_well_as_level():
+    """Two stints at one level are told apart by the club, not the level."""
+    traded = player(level="AA", team_name="Arkansas Travelers")
+    rendered = evaluation.render_prior(evaluation.evaluate(traded, baseline(), 50))
+    assert "AA Arkansas Travelers (TEX)" in rendered
+
+
+def test_a_stint_without_a_club_still_names_the_level():
+    rendered = evaluation.render_prior(evaluation.evaluate(player(), baseline(), 50))
+    assert "Before that at AA (TEX)" in rendered
 
 
 def test_production_line_leaves_the_level_to_the_heading_above_it():
@@ -391,3 +425,60 @@ def test_power_bars_are_absent_when_play_by_play_was_never_gathered():
     assert ranked["Air%"] is None
     assert ranked["Pull%"] is None
     assert ranked["Contact%"] is not None
+
+
+def league(name: str, **overrides) -> LeagueBaseline:
+    base = baselines.LeagueBaseline(
+        league_id=abs(hash(name)) % 1000,
+        league_name=name,
+        group="hitting",
+        runs_per_pa=0.12,
+        raa_per_pa=0.0,
+        woba_scale=1.2,
+        league_woba=0.320,
+        average_age=23.0,
+    )
+    for key, value in overrides.items():
+        setattr(base, key, value)
+    return base
+
+
+def test_a_blended_baseline_names_both_leagues():
+    """The reader is being told what the percentiles beneath were measured on."""
+    blended = baselines.blend([(league("SOU"), 97.0), (league("TEX"), 89.0)])
+    assert blended.league_name == "SOU/TEX"
+
+
+def test_blended_constants_lean_toward_the_longer_stint():
+    blended = baselines.blend(
+        [
+            (league("SOU", runs_per_pa=0.10), 90.0),
+            (league("TEX", runs_per_pa=0.20), 10.0),
+        ]
+    )
+    assert blended.runs_per_pa == pytest.approx(0.11)
+
+
+def test_a_blended_rank_is_the_ranks_in_each_league_weighted():
+    easy = league("SOU", distributions={"power": [float(n) for n in range(100)]})
+    hard = league("TEX", distributions={"power": [float(n) for n in range(50, 150)]})
+    blended = baselines.blend([(easy, 50.0), (hard, 50.0)])
+    # 60 is the 60th percentile of one league and the 10th of the other.
+    assert blended.percentile("power", 60.0) == 35
+
+
+def test_a_league_too_small_to_rank_is_left_out_of_the_blend():
+    ranked = league("SOU", distributions={"power": [float(n) for n in range(100)]})
+    tiny = league("TEX", distributions={"power": [1.0, 2.0]})
+    blended = baselines.blend([(ranked, 50.0), (tiny, 50.0)])
+    assert blended.percentile("power", 60.0) == 60
+
+
+def test_one_stint_needs_no_blending():
+    only = league("TEX")
+    assert baselines.blend([(only, 200.0)]) is only
+
+
+def test_a_club_with_no_playing_time_does_not_drag_the_blend():
+    played = league("SOU", runs_per_pa=0.10)
+    assert baselines.blend([(played, 100.0), (league("TEX"), 0.0)]) is played

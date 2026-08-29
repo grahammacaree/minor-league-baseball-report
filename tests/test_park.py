@@ -164,3 +164,41 @@ def test_parks_in_different_leagues_normalize_separately():
 
     by_league = park_builder.factors(collected)
     assert set(by_league) == {112, 117}
+
+
+def factors_for(**by_team) -> park.ParkFactors:
+    return park.ParkFactors(
+        season=2026,
+        by_team={
+            int(team): {**park.NEUTRAL, **values} for team, values in by_team.items()
+        },
+    )
+
+
+def test_two_parks_blend_by_how_much_of_a_season_each_holds():
+    parks = factors_for(**{"1": {"runs": 1.20}, "2": {"runs": 1.00}})
+    mostly_first = parks.blended({1: 90.0, 2: 10.0})["runs"]
+    mostly_second = parks.blended({1: 10.0, 2: 90.0})["runs"]
+    assert mostly_first > mostly_second
+    assert 1.00 < mostly_second < mostly_first < 1.20
+
+
+def test_opposite_parks_cancel():
+    """These are multipliers, so a fifth up and a sixth down is neutral."""
+    parks = factors_for(**{"1": {"home_runs": 1.2}, "2": {"home_runs": 1 / 1.2}})
+    assert parks.blended({1: 50.0, 2: 50.0})["home_runs"] == pytest.approx(1.0)
+
+
+def test_one_club_blends_to_its_own_factors():
+    parks = factors_for(**{"1": {"runs": 1.15}})
+    assert parks.blended({1: 200.0})["runs"] == pytest.approx(1.15)
+
+
+def test_blending_nothing_is_neutral():
+    assert factors_for(**{"1": {"runs": 1.15}}).blended({}) == park.NEUTRAL
+
+
+def test_the_blended_runs_factor_is_halved_like_any_other():
+    """Half his games are on the road wherever he was traded from."""
+    parks = factors_for(**{"1": {"runs": 1.20}, "2": {"runs": 1.20}})
+    assert parks.blended_runs_factor({1: 50.0, 2: 50.0}) == pytest.approx(1.10)

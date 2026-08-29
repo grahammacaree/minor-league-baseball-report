@@ -51,6 +51,22 @@ def get(path: str, **params: Any) -> dict:
     raise StatsApiError(f"GET {url} failed: {last_error}")
 
 
+def team_short_names(sport_id: int, season: int) -> dict[int, str]:
+    """
+    Club id to its short name, e.g. 566 to "Tacoma".
+
+    The leaderboards carry only the full "Tacoma Rainiers". The short form is
+    what belongs beside a level, where the club is being named to tell two
+    stints apart rather than introduced.
+    """
+    teams = get("teams", sportId=sport_id, season=season).get("teams", [])
+    return {
+        team["id"]: team.get("shortName") or team.get("name", "")
+        for team in teams
+        if team.get("id")
+    }
+
+
 def affiliate_teams(parent_org_id: int, season: int) -> list[dict]:
     """
     Minor-league clubs belonging to an organization.

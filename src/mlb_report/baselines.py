@@ -24,7 +24,7 @@ class ParkLookup(Protocol):
 
 
 # Bump whenever the cached shape changes, so stale files are refetched.
-_CACHE_SCHEMA = 3
+_CACHE_SCHEMA = 4
 
 _STAT_KEYS = (
     "age",
@@ -70,6 +70,10 @@ class PlayerSeason:
     # The level this row's stats were earned at, as a sport id, so play-by-play
     # gathered per level can be matched to the right stint of a season.
     sport_id: int = 0
+    # The club, which the level alone does not identify. A player who changes
+    # organizations mid-season can have two stints at the same level, and
+    # "AA" twice over says nothing about which is which.
+    team_name: str = ""
 
     @property
     def events(self) -> sm.Events:
@@ -108,8 +112,84 @@ class LeagueBaseline:
         return round(100 * position / len(sorted_values))
 
 
+@dataclass
+class BlendedBaseline(LeagueBaseline):
+    """
+    One yardstick for a player measured against two leagues.
+
+    A player traded within a level has a single line covering time in two
+    leagues, and ranking all of it against either one is wrong in whichever
+    direction that league is the easier. Rather than splitting the line, the
+    comparison is blended: he is ranked in each league he played in, and those
+    ranks averaged by how much of his season each accounts for.
+
+    Averaging the ranks rather than pooling the two leagues' players is the
+    faithful reading. It says he was in the sixtieth percentile of one league
+    for half a season and the seventieth of the other for the rest, which is
+    what actually happened.
+    """
+
+    parts: list[tuple[LeagueBaseline, float]] = field(default_factory=list, repr=False)
+
+    def percentile(self, metric: str, value: float | None) -> int | None:
+        ranks = [
+            (part.percentile(metric, value), weight) for part, weight in self.parts
+        ]
+        usable = [(rank, weight) for rank, weight in ranks if rank is not None]
+        total = sum(weight for _, weight in usable)
+        if not total:
+            return None
+        return round(sum(rank * weight for rank, weight in usable) / total)
+
+
+def blend(parts: list[tuple[LeagueBaseline, float]]) -> LeagueBaseline:
+    """
+    Weigh two leagues' baselines by how much of a season each accounts for.
+
+    The constants behind wRC+ and FIP- describe a run environment, so a season
+    split across two of them was played in neither and is fairly measured
+    against the mix.
+    """
+    usable = [(part, weight) for part, weight in parts if weight > 0]
+    if len(usable) == 1:
+        return usable[0][0]
+    if not usable:
+        raise ValueError("nothing to blend")
+
+    total = sum(weight for _, weight in usable)
+
+    def mean(read) -> float:
+        return sum(read(part) * weight for part, weight in usable) / total
+
+    ages = [(part, weight) for part, weight in usable if part.average_age is not None]
+    first = usable[0][0]
+    return BlendedBaseline(
+        league_id=first.league_id,
+        # Both leagues are named, since the reader is being told what the
+        # percentiles beneath were measured against.
+        league_name="/".join(dict.fromkeys(part.league_name for part, _ in usable)),
+        group=first.group,
+        runs_per_pa=mean(lambda p: p.runs_per_pa),
+        raa_per_pa=mean(lambda p: p.raa_per_pa),
+        woba_scale=mean(lambda p: p.woba_scale),
+        league_woba=mean(lambda p: p.league_woba),
+        league_fip=mean(lambda p: p.league_fip),
+        fip_constant=mean(lambda p: p.fip_constant),
+        average_age=(
+            sum(part.average_age * weight for part, weight in ages)
+            / sum(weight for _, weight in ages)
+            if ages
+            else None
+        ),
+        parts=usable,
+    )
+
+
 def _merge_pool(
-    season_rows: list[dict], advanced_rows: list[dict], group: str
+    season_rows: list[dict],
+    advanced_rows: list[dict],
+    group: str,
+    short_names: dict[int, str] | None = None,
 ) -> list[PlayerSeason]:
     """
     Join the standard and advanced leaderboards for one level.
@@ -121,10 +201,12 @@ def _merge_pool(
     advanced_by_player = {
         row["player"]["id"]: row.get("stat", {}) for row in advanced_rows
     }
+    short_names = short_names or {}
     pool = []
     for row in season_rows:
         player = row.get("player", {})
         league = row.get("league", {})
+        team = row.get("team", {})
         merged = {**row.get("stat", {}), **advanced_by_player.get(player.get("id"), {})}
         pool.append(
             PlayerSeason(
@@ -135,8 +217,11 @@ def _merge_pool(
                 level=row.get("sport", {}).get("abbreviation", ""),
                 group=group,
                 stat={key: merged[key] for key in _STAT_KEYS if key in merged},
-                team_id=row.get("team", {}).get("id", 0),
+                team_id=team.get("id", 0),
                 sport_id=row.get("sport", {}).get("id", 0),
+                # "Tacoma" rather than "Tacoma Rainiers": the club is being
+                # named to tell two stints apart, not introduced.
+                team_name=short_names.get(team.get("id", 0), team.get("name", "")),
             )
         )
     return pool
@@ -147,7 +232,9 @@ def fetch_pool(sport_id: int, season: int, group: str) -> list[PlayerSeason]:
     advanced_rows = statsapi.stats_leaderboard(
         "seasonAdvanced", group, sport_id, season
     )
-    return _merge_pool(season_rows, advanced_rows, group)
+    return _merge_pool(
+        season_rows, advanced_rows, group, statsapi.team_short_names(sport_id, season)
+    )
 
 
 def _cache_path(season: int, group: str) -> object:
