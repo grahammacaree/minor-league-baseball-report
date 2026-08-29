@@ -34,6 +34,10 @@ from .config_loader import user_data_dir
 # backfill asks more of it than everything else in the project combined.
 WORKERS = 6
 
+# Games between cache writes. The file is rewritten whole, so this trades a few
+# seconds of serialisation against how much refetching an interruption costs.
+CHECKPOINT = 500
+
 SWING_FIELDS = ("pitches", "swings", "whiffs", "called_strikes")
 TRAJECTORY_FIELDS = ("ground", "line", "fly", "pop")
 SPRAY_FIELDS = ("pull", "center", "oppo")
@@ -266,6 +270,12 @@ def gather(sport_id: int, season: int, progress: bool = True) -> dict:
                 games[game_pk] = parsed
             else:
                 failed += 1
+            # Checkpointed rather than saved only at the end. A full backfill
+            # runs for hours across sixteen level-seasons, and anything that
+            # stops it partway through one of them should cost minutes of
+            # refetching rather than all of it.
+            if done % CHECKPOINT == 0:
+                _save(sport_id, season, games)
             if progress and done % 500 == 0:
                 rate = done / (time.time() - started)
                 remaining = (len(missing) - done) / rate / 60
