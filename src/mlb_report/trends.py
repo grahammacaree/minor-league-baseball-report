@@ -5,12 +5,17 @@ from datetime import date, timedelta
 
 from .models import GameLog
 
+UP, DOWN = "up", "down"
+
 
 @dataclass(frozen=True)
 class Trend:
     player_id: int
     player_name: str
     headline: str
+    # Which way the form is pointing, so a reader can take it in as an arrow
+    # rather than by reading the sentence.
+    direction: str = UP
 
 
 def _chronological(logs: list[GameLog]) -> list[GameLog]:
@@ -161,6 +166,7 @@ def for_player(
                     player_name,
                     f"cold over {days} days: {_format_slash(line)} "
                     f"in {line['plateAppearances']} PA",
+                    DOWN,
                 )
             )
             break

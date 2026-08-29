@@ -52,9 +52,9 @@ def test_subject_leads_with_roster_moves():
     assert "1 roster move" in subject
 
 
-def test_subject_falls_back_to_performances_then_trends():
-    assert "2 notable" in emailer.subject_for(digest(notable=["a", "b"]))
-    assert "trends only" in emailer.subject_for(digest(trends=["a"]))
+def test_subject_falls_back_to_standouts_then_calls_it_quiet():
+    """The watchlist playing is not news, so it does not reach the subject."""
+    assert "2 notable" in emailer.subject_for(digest(standouts=2))
     assert "quiet night" in emailer.subject_for(digest())
 
 
@@ -128,3 +128,11 @@ def test_text_after_bars_is_not_pushed_away_by_a_break():
         "- **A Player** — 2-4\n  Contact 58th · Power 77th\n  34% grounders (10th)\n"
     )
     assert "</table><br>" not in html
+
+
+def test_level_headings_render_as_headings():
+    """Longer prefixes are checked first, or "### AAA" arrives as body text."""
+    html = emailer.markdown_to_html("## Played yesterday\n\n### AAA\n\n- **A** — 2-4\n")
+    assert "<h3" in html
+    assert "AAA</h3>" in html
+    assert "### AAA" not in html

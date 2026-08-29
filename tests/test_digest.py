@@ -81,64 +81,94 @@ def build(history=(), moves=()):
     )
 
 
-def test_watchlist_covers_every_top_ranked_prospect():
+def all_played(digest):
+    return [line for lines in digest.played.values() for line in lines]
+
+
+def test_a_season_line_is_written_for_every_watchlist_prospect():
+    """Whether or not he played — the season is the standing context."""
     digest = build([hitting(2)])
-    assert len(digest.watchlist) == 2
+    assert len(digest.seasons) == 2
 
 
-def test_watchlist_says_so_when_a_prospect_did_not_play():
+def test_only_players_who_played_appear_under_a_level():
     digest = build([hitting(2)])
-    assert "did not play" in digest.watchlist[0]
-    assert "did not play" not in digest.watchlist[1]
+    played = all_played(digest)
+    assert len(played) == 1
+    assert "Lazaro Montes" in played[0]
 
 
-def test_watchlist_shows_both_games_of_a_doubleheader():
+def test_levels_are_ordered_with_the_highest_first():
+    digest = build([pitching(1), hitting(2)])
+    assert list(digest.played) == ["AAA", "AA"]
+
+
+def test_both_games_of_a_doubleheader_land_on_one_line():
+    """A player should appear once wherever the reader looks for him."""
     digest = build([hitting(2), hitting(2, summary="1-3")])
-    assert digest.watchlist[1].count("—") >= 1
-    assert "1-3" in digest.watchlist[1]
+    played = all_played(digest)
+    assert len(played) == 1
+    assert "1-3" in played[0] and "2-4, HR" in played[0]
 
 
 def test_pitchers_get_a_pitching_line():
     digest = build([pitching(1)])
-    assert "6.0 IP" in digest.watchlist[0]
-    assert "8 K" in digest.watchlist[0]
+    line = all_played(digest)[0]
+    assert "6.0 IP" in line and "8 K" in line
 
 
-def test_notable_only_covers_ranks_below_the_watchlist():
+def test_below_the_watchlist_only_the_notable_get_in():
     digest = build([hitting(2, hits=4), hitting(3, hits=4)])
-    assert len(digest.notable) == 1
-    assert "Henry Ford" in digest.notable[0]
+    played = all_played(digest)
+    assert len(played) == 2
+    assert digest.standouts == 1
 
 
 def test_quiet_games_outside_the_watchlist_are_omitted():
     digest = build([hitting(3, hits=1, summary="1-4")])
-    assert digest.notable == []
+    assert all_played(digest) == []
+
+
+def test_a_quiet_game_inside_the_watchlist_is_still_shown():
+    """The watchlist is read every day, not only on the good days."""
+    digest = build([hitting(2, hits=1, summary="1-4")])
+    assert len(all_played(digest)) == 1
+    assert digest.standouts == 0
 
 
 def test_a_home_run_is_notable():
     digest = build([hitting(3, hits=1, homeRuns=1, summary="1-4, HR")])
-    assert len(digest.notable) == 1
+    assert digest.standouts == 1
 
 
 def test_a_strikeout_heavy_start_is_notable():
     digest = build([pitching(4, strikeOuts=9)])
-    assert len(digest.notable) == 1
+    assert digest.standouts == 1
 
 
 def test_a_short_scoreless_relief_outing_is_notable():
     digest = build([pitching(4, strikeOuts=2, earnedRuns=0, inningsPitched="2.0")])
-    assert len(digest.notable) == 1
+    assert digest.standouts == 1
 
 
 def test_a_scoreless_single_inning_is_not_notable():
     digest = build([pitching(4, strikeOuts=1, earnedRuns=0, inningsPitched="1.0")])
-    assert digest.notable == []
+    assert digest.standouts == 0
 
 
-def test_trends_read_the_whole_history_not_just_today():
+def test_form_rides_along_on_the_season_line_as_an_arrow():
+    """Read as a direction rather than as a sentence in its own section."""
+    history = [hitting(2, day=day, hits=1, summary="1-4") for day in range(20, 29)]
+    digest = build(history)
+    montes = next(entry for entry in digest.seasons if "Lazaro Montes" in entry)
+    assert "↑" in montes
+    assert "hit streak" in montes
+
+
+def test_form_is_only_computed_for_the_watchlist():
     history = [hitting(3, day=day, hits=1, summary="1-4") for day in range(20, 29)]
     digest = build(history)
-    assert any("hit streak" in line for line in digest.trends)
+    assert not any("hit streak" in entry for entry in digest.seasons)
 
 
 def test_moves_are_listed_with_injuries_labelled():
@@ -165,20 +195,22 @@ def test_unresolved_prospects_are_flagged_as_a_note():
     assert "Unrostered Kid" in digest.warnings[0]
 
 
-def test_a_digest_with_only_a_watchlist_counts_as_empty():
+def test_a_digest_with_only_the_watchlist_playing_counts_as_quiet():
+    """They play most days; that on its own is not why an email should arrive."""
     assert build([hitting(2, hits=1, summary="1-4")]).is_empty
     assert not build([hitting(3, hits=4)]).is_empty
 
 
 def test_render_includes_every_section():
     output = digest_module.render(build([hitting(2)]))
-    for heading in (
-        "Watchlist",
-        "Notable performances",
-        "Trends and streaks",
-        "Moves and injuries",
-    ):
+    for heading in ("Played yesterday", "Top 10 season lines", "Moves and injuries"):
         assert f"## {heading}" in output
+
+
+def test_render_puts_each_level_under_its_own_heading():
+    output = digest_module.render(build([pitching(1), hitting(2)]))
+    assert "### AAA\n" in output and "### AA\n" in output
+    assert output.index("### AAA\n") < output.index("### AA\n")
 
 
 def test_render_notes_empty_sections_rather_than_dropping_them():
@@ -187,12 +219,12 @@ def test_render_notes_empty_sections_rather_than_dropping_them():
     assert "Friday 28 August 2026" in output
 
 
-def test_a_promoted_player_shows_the_note_not_his_day():
+def test_a_promoted_player_is_marked_on_his_season_line():
     """His major league games are on television; the digest stays in the minors."""
     digest = digest_module.build(
         report_date=REPORT_DATE,
         tracked=TOP_FOUR,
-        history=[hitting(2)],
+        history=[],
         moves=[],
         settings=SETTINGS,
         contexts={
@@ -201,14 +233,13 @@ def test_a_promoted_player_shows_the_note_not_his_day():
             )
         },
     )
-    entry = next(line for line in digest.watchlist if "Lazaro Montes" in line)
+    entry = next(line for line in digest.seasons if "Lazaro Montes" in line)
     assert "promoted to MLB" in entry
-    assert "2-4, HR" not in entry
     # The season still reads as the last thing he did in the minors.
     assert "AAA (PCL): 119 wRC+ in 194 PA" in entry
 
 
-def test_a_player_still_in_the_minors_shows_his_day():
+def test_a_player_still_in_the_minors_carries_no_promotion_note():
     digest = digest_module.build(
         report_date=REPORT_DATE,
         tracked=TOP_FOUR,
@@ -217,6 +248,6 @@ def test_a_player_still_in_the_minors_shows_his_day():
         settings=SETTINGS,
         contexts={2: digest_module.PlayerContext(promoted=False)},
     )
-    entry = next(line for line in digest.watchlist if "Lazaro Montes" in line)
+    entry = next(line for line in digest.seasons if "Lazaro Montes" in line)
     assert "promoted to MLB" not in entry
-    assert "2-4, HR" in entry
+    assert "2-4, HR" in all_played(digest)[0]

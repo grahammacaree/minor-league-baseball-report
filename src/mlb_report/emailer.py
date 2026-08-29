@@ -87,6 +87,10 @@ _STYLE = {
         "letter-spacing:0.06em;color:#6e6e73;margin:32px 0 12px;"
         "padding-bottom:6px;border-bottom:1px solid #e5e5ea"
     ),
+    "h3": (
+        "font-size:12px;font-weight:600;letter-spacing:0.04em;color:#1d1d1f;"
+        "margin:18px 0 6px"
+    ),
     "p": "margin:0 0 14px",
     "ul": "margin:0 0 14px;padding-left:20px",
     "li": "margin:0 0 10px",
@@ -161,7 +165,11 @@ def markdown_to_html(text: str) -> str:
             continue
 
         flush_bullets()
-        if stripped.startswith("## "):
+        # Checked before the shorter prefixes, which would otherwise never see
+        # a level heading as anything but a paragraph.
+        if stripped.startswith("### "):
+            out.append(f'<h3 style="{_STYLE["h3"]}">{_inline_html(stripped[4:])}</h3>')
+        elif stripped.startswith("## "):
             out.append(f'<h2 style="{_STYLE["h2"]}">{_inline_html(stripped[3:])}</h2>')
         elif stripped.startswith("# "):
             out.append(f'<h1 style="{_STYLE["h1"]}">{_inline_html(stripped[2:])}</h1>')
@@ -182,12 +190,8 @@ def subject_for(digest: Digest) -> str:
     date_label = f"{digest.report_date:%-d %b}"
     if digest.moves:
         return f"Mariners farm {date_label}: {len(digest.moves)} roster move(s)"
-    if digest.notable:
-        return (
-            f"Mariners farm {date_label}: {len(digest.notable)} notable performance(s)"
-        )
-    if digest.trends:
-        return f"Mariners farm {date_label}: trends only"
+    if digest.standouts:
+        return f"Mariners farm {date_label}: {digest.standouts} notable performance(s)"
     return f"Mariners farm {date_label}: quiet night"
 
 
