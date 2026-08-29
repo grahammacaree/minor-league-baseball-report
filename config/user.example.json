@@ -3,5 +3,6 @@
   "recipients": [
     { "name": "Graham MacAree", "email": "hi@grahammacaree.com" }
   ],
-  "send_when_quiet": true
+  "_send_when_quiet": "Email even when there is nothing to report. Off by default: the season ends in September, and the alternative is an empty digest every morning until April.",
+  "send_when_quiet": false
 }
