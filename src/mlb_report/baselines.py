@@ -24,7 +24,7 @@ class ParkLookup(Protocol):
 
 
 # Bump whenever the cached shape changes, so stale files are refetched.
-_CACHE_SCHEMA = 3
+_CACHE_SCHEMA = 4
 
 _STAT_KEYS = (
     "age",
@@ -70,6 +70,10 @@ class PlayerSeason:
     # The level this row's stats were earned at, as a sport id, so play-by-play
     # gathered per level can be matched to the right stint of a season.
     sport_id: int = 0
+    # The club, which the level alone does not identify. A player who changes
+    # organizations mid-season can have two stints at the same level, and
+    # "AA" twice over says nothing about which is which.
+    team_name: str = ""
 
     @property
     def events(self) -> sm.Events:
@@ -109,7 +113,10 @@ class LeagueBaseline:
 
 
 def _merge_pool(
-    season_rows: list[dict], advanced_rows: list[dict], group: str
+    season_rows: list[dict],
+    advanced_rows: list[dict],
+    group: str,
+    short_names: dict[int, str] | None = None,
 ) -> list[PlayerSeason]:
     """
     Join the standard and advanced leaderboards for one level.
@@ -121,10 +128,12 @@ def _merge_pool(
     advanced_by_player = {
         row["player"]["id"]: row.get("stat", {}) for row in advanced_rows
     }
+    short_names = short_names or {}
     pool = []
     for row in season_rows:
         player = row.get("player", {})
         league = row.get("league", {})
+        team = row.get("team", {})
         merged = {**row.get("stat", {}), **advanced_by_player.get(player.get("id"), {})}
         pool.append(
             PlayerSeason(
@@ -135,8 +144,11 @@ def _merge_pool(
                 level=row.get("sport", {}).get("abbreviation", ""),
                 group=group,
                 stat={key: merged[key] for key in _STAT_KEYS if key in merged},
-                team_id=row.get("team", {}).get("id", 0),
+                team_id=team.get("id", 0),
                 sport_id=row.get("sport", {}).get("id", 0),
+                # "Tacoma" rather than "Tacoma Rainiers": the club is being
+                # named to tell two stints apart, not introduced.
+                team_name=short_names.get(team.get("id", 0), team.get("name", "")),
             )
         )
     return pool
@@ -147,7 +159,9 @@ def fetch_pool(sport_id: int, season: int, group: str) -> list[PlayerSeason]:
     advanced_rows = statsapi.stats_leaderboard(
         "seasonAdvanced", group, sport_id, season
     )
-    return _merge_pool(season_rows, advanced_rows, group)
+    return _merge_pool(
+        season_rows, advanced_rows, group, statsapi.team_short_names(sport_id, season)
+    )
 
 
 def _cache_path(season: int, group: str) -> object:

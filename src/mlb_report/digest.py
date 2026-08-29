@@ -27,7 +27,9 @@ class PlayerContext:
     age: str | None = None
     production: str | None = None
     skills: str | None = None
-    prior: str | None = None
+    # Every level and club he has left this season, largest sample first. A
+    # promotion is the case where the stint behind him is the better evidence.
+    priors: list[str] = field(default_factory=list)
     promoted: bool = False
 
 
@@ -168,8 +170,7 @@ def _season_entry(
     if context:
         if context.skills:
             body.append(f"  {context.skills}")
-        if context.prior:
-            body.append(f"  {context.prior}")
+        body.extend(f"  {prior}" for prior in context.priors)
     return "\n".join(body)
 
 

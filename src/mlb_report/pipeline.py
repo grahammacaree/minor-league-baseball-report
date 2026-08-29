@@ -65,7 +65,7 @@ def _contexts(
                 stints.setdefault(player.player_id, []).append(player)
 
         for player_id, player_stints in stints.items():
-            current, previous = evaluation.split_stints(
+            current, earlier = evaluation.split_stints(
                 player_stints, current_level.get(player_id)
             )
             baseline = league_baselines.get(current.league_id)
@@ -82,24 +82,26 @@ def _contexts(
             if player_id in contexts and not result.has_enough_sample:
                 continue  # keep whichever group the player has a real season in
 
-            prior = None
-            if previous is not None:
+            priors = []
+            for previous in earlier:
                 prior_baseline = league_baselines.get(previous.league_id)
-                if prior_baseline is not None:
-                    prior_result = evaluation.evaluate(
-                        previous,
-                        prior_baseline,
-                        minimum[group],
-                        park_factor=parks.runs_factor(previous.team_id),
-                        park_components=parks.for_team(previous.team_id),
-                    )
-                    prior = evaluation.render_prior(prior_result)
+                if prior_baseline is None:
+                    continue
+                prior_result = evaluation.evaluate(
+                    previous,
+                    prior_baseline,
+                    minimum[group],
+                    park_factor=parks.runs_factor(previous.team_id),
+                    park_components=parks.for_team(previous.team_id),
+                )
+                if line := evaluation.render_prior(prior_result):
+                    priors.append(line)
 
             contexts[player_id] = PlayerContext(
                 age=evaluation.age_context(current, baseline),
                 production=evaluation.render_production(result),
                 skills=evaluation.render_skills(result),
-                prior=prior,
+                priors=priors,
                 promoted=player_id in (promoted or set()),
             )
     return contexts
