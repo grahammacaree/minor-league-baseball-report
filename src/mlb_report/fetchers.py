@@ -139,6 +139,40 @@ def transactions(
     return sorted(moves, key=lambda move: (move.effective_date, move.player_name))
 
 
+def club_shares(
+    player_id: int, group: str, season: int, sport_id: int
+) -> dict[int, float]:
+    """
+    How a player's time at one level divides between the clubs he played for.
+
+    The leaderboards pool a within-level trade into a single row credited to
+    whichever club he finished with, so the split has to be asked for by name.
+    The per-player feed does break it out, and returns an unattributed total
+    alongside the clubs, which is dropped.
+
+    Returns an empty mapping for the ordinary case of one club, so callers can
+    treat "nothing to blend" and "nothing to see" alike.
+    """
+    payload = statsapi.get(
+        f"people/{player_id}/stats",
+        stats="season",
+        group=group,
+        season=season,
+        sportId=sport_id,
+    )
+    shares: dict[int, float] = {}
+    for block in payload.get("stats", []):
+        for split in block.get("splits", []):
+            team_id = (split.get("team") or {}).get("id")
+            if not team_id:
+                continue  # the combined row, which is what we are unpicking
+            stat = split.get("stat", {})
+            played = stat.get("plateAppearances") or stat.get("battersFaced") or 0
+            if played:
+                shares[team_id] = shares.get(team_id, 0.0) + float(played)
+    return shares if len(shares) > 1 else {}
+
+
 # Ways a player crosses an organization's boundary. Minor-league free agent
 # signings are left out: they are mostly depth, and would bury the case this is
 # here to catch — a ranked prospect moving between capture points.

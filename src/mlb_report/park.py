@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from math import exp, log
 
 from .config_loader import bundled_config_dir
 
@@ -65,6 +66,35 @@ class ParkFactors:
         """
         raw = self.for_team(team_id).get("runs", 1.0)
         return (raw + 1.0) / 2
+
+    def blended(self, shares: dict[int, float]) -> dict[str, float]:
+        """
+        One set of factors for a player who called two parks home.
+
+        A mid-season trade leaves a line earned half in one park and half in
+        another, and adjusting all of it by either one is simply wrong. The two
+        are averaged by how much of his season each accounts for.
+
+        The mean is geometric because these are multipliers: a park that
+        inflates home runs by a fifth and one that suppresses them by a sixth
+        cancel exactly, which is the answer an arithmetic mean misses.
+        """
+        total = sum(shares.values())
+        if not total:
+            return dict(NEUTRAL)
+        return {
+            component: exp(
+                sum(
+                    share * log(max(self.for_team(team).get(component, 1.0), 1e-6))
+                    for team, share in shares.items()
+                )
+                / total
+            )
+            for component in COMPONENTS
+        }
+
+    def blended_runs_factor(self, shares: dict[int, float]) -> float:
+        return (self.blended(shares).get("runs", 1.0) + 1.0) / 2
 
 
 def _factors_dir():

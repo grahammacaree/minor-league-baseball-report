@@ -297,3 +297,52 @@ def test_a_promotion_is_neither_coming_nor_going(api):
     api.transactions_by_team = {619: [raw_move(703155, to_team=619, from_team=529)]}
     joined, left = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
     assert joined == [] and left == []
+
+
+def split_payload(*clubs) -> dict:
+    """The per-player feed, which reports each club and an unattributed total."""
+    splits = [
+        {"team": {"id": team}, "stat": {"plateAppearances": pa}} for team, pa in clubs
+    ]
+    total = sum(pa for _, pa in clubs)
+    splits.insert(0, {"stat": {"plateAppearances": total}})
+    return {"stats": [{"splits": splits}]}
+
+
+def test_a_traded_player_reports_time_at_each_club(monkeypatch):
+    monkeypatch.setattr(
+        fetchers.statsapi, "get", lambda *a, **k: split_payload((247, 97), (574, 89))
+    )
+    assert fetchers.club_shares(695722, "hitting", 2026, 12) == {247: 97.0, 574: 89.0}
+
+
+def test_the_ordinary_one_club_season_needs_no_blending(monkeypatch):
+    monkeypatch.setattr(
+        fetchers.statsapi, "get", lambda *a, **k: split_payload((574, 186))
+    )
+    assert fetchers.club_shares(807739, "hitting", 2026, 12) == {}
+
+
+def test_a_club_he_never_played_for_is_not_a_share(monkeypatch):
+    monkeypatch.setattr(
+        fetchers.statsapi, "get", lambda *a, **k: split_payload((247, 97), (574, 0))
+    )
+    assert fetchers.club_shares(695722, "hitting", 2026, 12) == {}
+
+
+def test_a_pitcher_is_weighted_by_batters_faced(monkeypatch):
+    monkeypatch.setattr(
+        fetchers.statsapi,
+        "get",
+        lambda *a, **k: {
+            "stats": [
+                {
+                    "splits": [
+                        {"team": {"id": 1}, "stat": {"battersFaced": 200}},
+                        {"team": {"id": 2}, "stat": {"battersFaced": 100}},
+                    ]
+                }
+            ]
+        },
+    )
+    assert fetchers.club_shares(1, "pitching", 2026, 12) == {1: 200.0, 2: 100.0}

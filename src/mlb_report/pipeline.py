@@ -33,6 +33,7 @@ def _contexts(
     season: int,
     settings: dict,
     promoted: set[int] | None = None,
+    changed_org: set[int] | None = None,
 ) -> dict[int, PlayerContext]:
     """
     Season context for every tracked prospect, in league terms.
@@ -42,6 +43,12 @@ def _contexts(
     one leaderboard row per stint, so the current level is reported and the
     previous one kept as context — a promotion is exactly the thing worth
     seeing.
+
+    A player traded within a level is the awkward case: the leaderboards pool
+    his line into one row under his new club, so the halves cannot be told
+    apart. His park and his league are blended instead, weighted by how much of
+    the season each accounts for, which measures the whole line against the mix
+    of conditions it was actually earned in.
 
     The majors are left out of the pool entirely. A promoted player's season
     then reads as the last thing he did in the minors, and his age no longer
@@ -58,6 +65,10 @@ def _contexts(
         leagues = {player.league_id for player in pool}
         parks = park.load(sorted(leagues), season)
         league_baselines = baselines.build(pool, group, minimum[group], parks=parks)
+        # Which league a club plays in, so a former club can be looked up from
+        # the shares without another request. Every club is in the pool already,
+        # by way of its own players.
+        by_league = {player.team_id: player.league_id for player in pool}
 
         stints: dict[int, list] = {}
         for player in pool:
@@ -72,12 +83,35 @@ def _contexts(
             if baseline is None:
                 continue
 
+            shares = (
+                fetchers.club_shares(player_id, group, season, current.sport_id)
+                if player_id in (changed_org or set())
+                else {}
+            )
+            known = {
+                team: weight
+                for team, weight in shares.items()
+                if by_league.get(team) in league_baselines
+            }
+            if len(known) > 1:
+                baseline = baselines.blend(
+                    [
+                        (league_baselines[by_league[team]], weight)
+                        for team, weight in known.items()
+                    ]
+                )
+                park_factor = parks.blended_runs_factor(known)
+                components = parks.blended(known)
+            else:
+                park_factor = parks.runs_factor(current.team_id)
+                components = parks.for_team(current.team_id)
+
             result = evaluation.evaluate(
                 current,
                 baseline,
                 minimum[group],
-                park_factor=parks.runs_factor(current.team_id),
-                park_components=parks.for_team(current.team_id),
+                park_factor=park_factor,
+                park_components=components,
             )
             if player_id in contexts and not result.has_enough_sample:
                 continue  # keep whichever group the player has a real season in
@@ -122,11 +156,18 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     # away stops being fetched at all. The window runs back to the capture
     # itself: a July trade is still the reason the list is wrong in September,
     # long after it stopped being news.
-    joined, left = fetchers.crossings(
-        org_id, season, rankings.captured_on(), report_date
-    )
+    # Scanned from the turn of the year rather than from the capture, because
+    # the two questions want different windows: whether to follow a player is
+    # about what has changed since the list was committed, while whether his
+    # numbers need blending is about anything that happened this season.
+    joined, left = fetchers.crossings(org_id, season, date(season, 1, 1), report_date)
+    changed_org = {move.player_id for move in joined}
     tracked, departed = prospects.without_departures(tracked, left)
-    tracked, acquired = prospects.with_acquisitions(tracked, joined, rankings.load())
+    tracked, acquired = prospects.with_acquisitions(
+        tracked,
+        [move for move in joined if move.effective_date >= rankings.captured_on()],
+        rankings.load(),
+    )
 
     levels = fetchers.current_levels(tracked, org_id, season)
     promoted = fetchers.in_majors(levels)
@@ -158,7 +199,13 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
         moves=moves,
         settings=settings,
         contexts=_contexts(
-            tracked, history, report_date, season, settings, promoted=promoted
+            tracked,
+            history,
+            report_date,
+            season,
+            settings,
+            promoted=promoted,
+            changed_org=changed_org,
         ),
         whiffs=whiffs,
         arrivals=recent,

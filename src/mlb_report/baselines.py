@@ -112,6 +112,79 @@ class LeagueBaseline:
         return round(100 * position / len(sorted_values))
 
 
+@dataclass
+class BlendedBaseline(LeagueBaseline):
+    """
+    One yardstick for a player measured against two leagues.
+
+    A player traded within a level has a single line covering time in two
+    leagues, and ranking all of it against either one is wrong in whichever
+    direction that league is the easier. Rather than splitting the line, the
+    comparison is blended: he is ranked in each league he played in, and those
+    ranks averaged by how much of his season each accounts for.
+
+    Averaging the ranks rather than pooling the two leagues' players is the
+    faithful reading. It says he was in the sixtieth percentile of one league
+    for half a season and the seventieth of the other for the rest, which is
+    what actually happened.
+    """
+
+    parts: list[tuple[LeagueBaseline, float]] = field(default_factory=list, repr=False)
+
+    def percentile(self, metric: str, value: float | None) -> int | None:
+        ranks = [
+            (part.percentile(metric, value), weight) for part, weight in self.parts
+        ]
+        usable = [(rank, weight) for rank, weight in ranks if rank is not None]
+        total = sum(weight for _, weight in usable)
+        if not total:
+            return None
+        return round(sum(rank * weight for rank, weight in usable) / total)
+
+
+def blend(parts: list[tuple[LeagueBaseline, float]]) -> LeagueBaseline:
+    """
+    Weigh two leagues' baselines by how much of a season each accounts for.
+
+    The constants behind wRC+ and FIP- describe a run environment, so a season
+    split across two of them was played in neither and is fairly measured
+    against the mix.
+    """
+    usable = [(part, weight) for part, weight in parts if weight > 0]
+    if len(usable) == 1:
+        return usable[0][0]
+    if not usable:
+        raise ValueError("nothing to blend")
+
+    total = sum(weight for _, weight in usable)
+
+    def mean(read) -> float:
+        return sum(read(part) * weight for part, weight in usable) / total
+
+    ages = [(part, weight) for part, weight in usable if part.average_age is not None]
+    first = usable[0][0]
+    return BlendedBaseline(
+        league_id=first.league_id,
+        # Both leagues are named, since the reader is being told what the
+        # percentiles beneath were measured against.
+        league_name="/".join(dict.fromkeys(part.league_name for part, _ in usable)),
+        group=first.group,
+        runs_per_pa=mean(lambda p: p.runs_per_pa),
+        raa_per_pa=mean(lambda p: p.raa_per_pa),
+        woba_scale=mean(lambda p: p.woba_scale),
+        league_woba=mean(lambda p: p.league_woba),
+        league_fip=mean(lambda p: p.league_fip),
+        fip_constant=mean(lambda p: p.fip_constant),
+        average_age=(
+            sum(part.average_age * weight for part, weight in ages)
+            / sum(weight for _, weight in ages)
+            if ages
+            else None
+        ),
+        parts=usable,
+    )
+
+
 def _merge_pool(
     season_rows: list[dict],
     advanced_rows: list[dict],
