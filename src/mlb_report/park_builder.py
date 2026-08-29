@@ -23,6 +23,7 @@ This is offseason work. Nothing in the daily digest calls it.
 from __future__ import annotations
 
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from . import pitch_data, statsapi
@@ -104,10 +105,16 @@ def home_team_by_game(sport_id: int, season: int) -> dict[int, int]:
 def team_game_logs(
     sport_id: int, season: int
 ) -> tuple[dict[int, dict[int, dict]], dict]:
-    """Each club's per-game offensive line, keyed by game."""
+    """
+    Each club's per-game offensive line, keyed by game.
+
+    One request per club, fetched concurrently. A level has thirty clubs and
+    each request takes most of a second, which run one after another is almost
+    the whole cost of a rebuild.
+    """
     teams = statsapi.get("teams", sportId=sport_id, season=season).get("teams", [])
-    logs: dict[int, dict[int, dict]] = {}
-    for team in teams:
+
+    def fetch(team: dict) -> tuple[int, dict[int, dict]]:
         payload = statsapi.get(
             f"teams/{team['id']}/stats",
             stats="gameLog",
@@ -118,22 +125,28 @@ def team_game_logs(
         rows = [
             split for block in payload.get("stats", []) for split in block["splits"]
         ]
-        logs[team["id"]] = {
+        return team["id"], {
             row["game"]["gamePk"]: row.get("stat", {})
             for row in rows
             if row.get("game", {}).get("gamePk")
         }
+
+    with ThreadPoolExecutor(pitch_data.WORKERS) as pool:
+        logs = dict(pool.map(fetch, teams))
     return logs, {team["id"]: team for team in teams}
 
 
-def collect(sport_id: int, season: int) -> dict[int, dict]:
+def collect(
+    sport_id: int, season: int, home_of: dict[int, int] | None = None
+) -> dict[int, dict]:
     """
     Per-park totals, split into the home club's games there and elsewhere.
 
     Both clubs' lines are counted in every game, so each park's totals cover
     the full run environment rather than one side of it.
     """
-    home_of = home_team_by_game(sport_id, season)
+    if home_of is None:
+        home_of = home_team_by_game(sport_id, season)
     logs, teams = team_game_logs(sport_id, season)
 
     # Which clubs played in each game, so a game's opposing line can be found.
@@ -221,7 +234,10 @@ def _pitch_sample(component: str, totals: dict[str, int]) -> int:
 
 
 def pitch_factors(
-    sport_id: int, season: int, league_of: dict[int, int]
+    sport_id: int,
+    season: int,
+    league_of: dict[int, int],
+    home_of: dict[int, int] | None = None,
 ) -> dict[int, dict[int, dict[str, float]]]:
     """
     Whiff, called-strike, ground-ball and pull factors, if play-by-play has
@@ -235,7 +251,8 @@ def pitch_factors(
     if not games:
         return {}
 
-    home_of = home_team_by_game(sport_id, season)
+    if home_of is None:
+        home_of = home_team_by_game(sport_id, season)
     at_home, on_road = pitch_data.by_club(games, home_of)
 
     by_league: dict[int, dict[int, dict[str, float]]] = defaultdict(dict)
@@ -268,11 +285,14 @@ def pitch_factors(
 
 
 def build(sport_id: int, season: int) -> dict[int, dict[int, dict[str, float]]]:
-    collected = collect(sport_id, season)
+    # Fetched once and shared: both halves of the build key off the same
+    # season's schedule, and it is not a cheap request.
+    home_of = home_team_by_game(sport_id, season)
+    collected = collect(sport_id, season, home_of)
     by_league = factors(collected)
 
     league_of = {club: data["league_id"] for club, data in collected.items()}
-    for league_id, parks in pitch_factors(sport_id, season, league_of).items():
+    for league_id, parks in pitch_factors(sport_id, season, league_of, home_of).items():
         for club, components in parks.items():
             if club in by_league.get(league_id, {}):
                 by_league[league_id][club].update(components)

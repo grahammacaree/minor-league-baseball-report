@@ -38,8 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--sports",
         type=int,
         nargs="*",
-        default=list(statsapi.AFFILIATE_SPORT_IDS),
-        help="sport ids to cover",
+        default=list(statsapi.FULL_SEASON_SPORT_IDS),
+        help=(
+            "sport ids to cover (default: the four full-season levels). Adding "
+            "a complex or Dominican level triggers a play-by-play backfill of "
+            "several thousand games for factors worth very little."
+        ),
     )
     parser.add_argument(
         "--force",

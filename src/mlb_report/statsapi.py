@@ -12,6 +12,14 @@ BASE_URL = "https://statsapi.mlb.com/api/v1"
 # MiLB levels, most advanced first. Sport 17 is the Dominican Summer League.
 AFFILIATE_SPORT_IDS = (11, 12, 13, 14, 16, 17)
 
+# The levels with a full schedule and a home park worth measuring. The complex
+# leagues and the Dominican Summer League are left out on purpose: their clubs
+# share a handful of academy fields, so a "home park" barely identifies a venue,
+# and gathering play-by-play across them costs thousands of requests to produce
+# factors that would mean very little. Prospects at those levels still appear in
+# the digest and in league baselines; only their parks go unmeasured.
+FULL_SEASON_SPORT_IDS = (11, 12, 13, 14)
+
 _USER_AGENT = "minor-league-baseball-report (+https://github.com/grahammacaree)"
 _TIMEOUT_SECONDS = 20
 _MAX_ATTEMPTS = 3
