@@ -283,6 +283,15 @@ during the season is a few hundred new games a day rather than a full backfill.
 
 None of this touches the daily digest, which only reads the committed factors.
 
+The digest does make one small play-by-play request per outing, to put a whiff
+count beside the strikeouts on a pitching line. It is bounded by how many
+tracked pitchers threw yesterday — a handful of games, not a season — and a game
+that cannot be read simply reports strikeouts alone. Strikeouts describe how an
+outing ended, which depends on the hitters and the umpire; whiffs describe how
+the stuff played. They come apart often enough to be worth both: in one Double-A
+game checked while building this, a reliever recorded a strikeout on zero
+whiffs, and another drew eleven whiffs for eight strikeouts.
+
 Hits in play are rated per ball in play; everything else per plate appearance.
 Otherwise a park that changes the strikeout rate would move the hits-in-play
 factor for the wrong reason.

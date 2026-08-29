@@ -121,6 +121,11 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     # performances, which level is current -- then sees only the minors.
     history = [log for log in store.load(season) if log.level != MAJORS]
 
+    # Only yesterday's outings, so the daily run makes a handful of play-by-play
+    # requests rather than the season-scale pass the park factors need.
+    today = [log for log in history if log.game_date == report_date]
+    whiffs = fetchers.whiffs_for_outings(today)
+
     digest = digest_module.build(
         report_date=report_date,
         tracked=tracked,
@@ -130,6 +135,7 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
         contexts=_contexts(
             tracked, history, report_date, season, settings, promoted=promoted
         ),
+        whiffs=whiffs,
     )
 
     captured = prospects.captured_on()

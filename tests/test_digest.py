@@ -251,3 +251,39 @@ def test_a_player_still_in_the_minors_carries_no_promotion_note():
     entry = next(line for line in digest.seasons if "Lazaro Montes" in line)
     assert "promoted to MLB" not in entry
     assert "2-4, HR" in all_played(digest)[0]
+
+
+def test_a_pitching_line_carries_whiffs_when_they_are_known():
+    """Six strikeouts on eight whiffs is a different night from six on eighteen."""
+    log = pitching(4, strikeOuts=9)
+    digest = digest_module.build(
+        REPORT_DATE,
+        TOP_FOUR,
+        [log],
+        [],
+        SETTINGS,
+        whiffs={(4, log.game_pk): 18},
+    )
+    assert "9 K (18 whiffs)" in all_played(digest)[0]
+
+
+def test_a_pitching_line_without_whiffs_reports_strikeouts_alone():
+    """Play-by-play is not always readable, and the line still has to render."""
+    digest = build([pitching(4, strikeOuts=9)])
+    line = all_played(digest)[0]
+    assert "9 K" in line
+    assert "whiffs" not in line
+
+
+def test_whiffs_belong_to_one_pitcher_in_one_game():
+    """The key is the outing, so a doubleheader does not share a whiff count."""
+    first, second = pitching(4, strikeOuts=9), pitching(4, day=27, strikeOuts=2)
+    digest = digest_module.build(
+        REPORT_DATE,
+        TOP_FOUR,
+        [first, second],
+        [],
+        SETTINGS,
+        whiffs={(4, second.game_pk): 5},
+    )
+    assert "whiffs" not in all_played(digest)[0]

@@ -81,27 +81,44 @@ def _hitting_line(log: GameLog) -> str:
     return ", ".join(parts)
 
 
-def _pitching_line(log: GameLog) -> str:
+def _pitching_line(log: GameLog, whiffs: int | None = None) -> str:
+    """
+    One outing, with the whiff count beside the strikeouts where it is known.
+
+    Strikeouts say how the outing ended, which depends on the hitters and on
+    the umpire. Whiffs say how the stuff played. Six strikeouts on eight whiffs
+    is a different night from six on eighteen.
+    """
     innings = log.stat.get("inningsPitched", "0.0")
+    strikeouts = f"{log.count('strikeOuts')} K"
+    if whiffs is not None:
+        strikeouts += f" ({whiffs} whiffs)"
     return (
         f"{innings} IP, {log.count('hits')} H, {log.count('runs')} R, "
         f"{log.count('earnedRuns')} ER, {log.count('baseOnBalls')} BB, "
-        f"{log.count('strikeOuts')} K"
+        f"{strikeouts}"
     )
 
 
-def game_line(log: GameLog) -> str:
-    return _pitching_line(log) if log.is_pitching else _hitting_line(log)
+def game_line(log: GameLog, whiffs: int | None = None) -> str:
+    return _pitching_line(log, whiffs) if log.is_pitching else _hitting_line(log)
 
 
-def _played_line(prospect: Prospect, logs: list[GameLog]) -> str:
+def _played_line(
+    prospect: Prospect,
+    logs: list[GameLog],
+    whiffs: dict[tuple[int, int], int],
+) -> str:
     """
     What a prospect did yesterday, with the level carried by the heading above.
 
     Doubleheaders are joined rather than split into two entries, so a player
     appears once wherever the reader looks for him.
     """
-    lines = "; ".join(f"{game_line(log)} vs {log.opponent}" for log in logs)
+    lines = "; ".join(
+        f"{game_line(log, whiffs.get((log.player_id, log.game_pk)))} vs {log.opponent}"
+        for log in logs
+    )
     return f"**{prospect.rank}. {prospect.name}** — {lines}"
 
 
@@ -163,9 +180,11 @@ def build(
     moves: list[Transaction],
     settings: dict,
     contexts: dict[int, PlayerContext] | None = None,
+    whiffs: dict[tuple[int, int], int] | None = None,
 ) -> Digest:
     digest = Digest(report_date=report_date)
     contexts = contexts or {}
+    whiffs = whiffs or {}
     logs_by_player = _by_player(history)
     today_by_player = {
         player_id: [log for log in logs if log.game_date == report_date]
@@ -185,7 +204,9 @@ def build(
         for level, logs in _by_level(today).items():
             shown = logs if watched else [t for t in logs if _is_notable(t, thresholds)]
             if shown:
-                by_level[level].append((prospect.rank, _played_line(prospect, shown)))
+                by_level[level].append(
+                    (prospect.rank, _played_line(prospect, shown, whiffs))
+                )
                 if not watched:
                     digest.standouts += 1
 

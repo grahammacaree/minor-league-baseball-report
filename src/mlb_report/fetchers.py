@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from . import statsapi
+from . import pitch_data, statsapi
 from .models import GameLog, Transaction
 from .prospects import Prospect
 
@@ -72,6 +72,27 @@ def game_logs(
             GameLog.from_split(prospect.player_id, group, split) for split in splits
         )
     return logs
+
+
+def whiffs_for_outings(logs: list[GameLog]) -> dict[tuple[int, int], int]:
+    """
+    Whiffs by pitcher and game, for one day's outings.
+
+    This is the only play-by-play the daily run touches, and it is bounded by
+    how many tracked pitchers threw yesterday — a handful of requests, not the
+    season-scale pass the park factors need. A game that cannot be read is
+    simply left out, and the line reports strikeouts alone.
+    """
+    wanted = {log.game_pk for log in logs if log.is_pitching}
+    found: dict[tuple[int, int], int] = {}
+    for game_pk in sorted(wanted):
+        try:
+            by_pitcher = pitch_data.whiffs_by_pitcher(game_pk)
+        except statsapi.StatsApiError:
+            continue
+        for pitcher, whiffs in by_pitcher.items():
+            found[(pitcher, game_pk)] = whiffs
+    return found
 
 
 def transactions(

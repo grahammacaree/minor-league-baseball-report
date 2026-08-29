@@ -109,6 +109,44 @@ def game_sides(sport_id: int, season: int) -> dict[int, dict[str, int]]:
     return sides
 
 
+def count_pitch(totals: dict[str, int], event: dict) -> None:
+    """Classify one pitch into the swing outcomes, in place."""
+    description = (event.get("details", {}).get("description") or "").lower()
+    totals["pitches"] += 1
+    if any(
+        token in description
+        for token in ("swinging strike", "foul", "in play", "missed bunt")
+    ):
+        totals["swings"] += 1
+    # A foul tip is a whiff by convention: the bat did not change the ball's
+    # path enough to put it in play.
+    if "swinging strike" in description or "foul tip" in description:
+        totals["whiffs"] += 1
+    elif "called strike" in description:
+        totals["called_strikes"] += 1
+
+
+def whiffs_by_pitcher(game_pk: int) -> dict[int, int]:
+    """
+    Swings and misses each pitcher drew in one game.
+
+    Fetched for the few games in a day's digest rather than read from the
+    season cache, which keeps only batted balls per player. A strikeout total
+    says how an outing ended; the whiff count says how the stuff played, and
+    the two come apart often enough to be worth both.
+    """
+    payload = statsapi.get(f"game/{game_pk}/playByPlay")
+    totals: dict[int, dict[str, int]] = defaultdict(lambda: _blank(SWING_FIELDS))
+    for play in payload.get("allPlays", []):
+        pitcher = play.get("matchup", {}).get("pitcher", {}).get("id")
+        if not pitcher:
+            continue
+        for event in play.get("playEvents", []):
+            if event.get("isPitch"):
+                count_pitch(totals[pitcher], event)
+    return {pitcher: counts["whiffs"] for pitcher, counts in totals.items()}
+
+
 def parse_game(game_pk: int, sides: dict[str, int]) -> dict:
     """
     Swing outcomes and batted balls for one game.
@@ -134,19 +172,7 @@ def parse_game(game_pk: int, sides: dict[str, int]) -> dict:
         for event in play.get("playEvents", []):
             if not event.get("isPitch"):
                 continue
-            description = (event.get("details", {}).get("description") or "").lower()
-            totals["pitches"] += 1
-            if any(
-                token in description
-                for token in ("swinging strike", "foul", "in play", "missed bunt")
-            ):
-                totals["swings"] += 1
-            # A foul tip is a whiff by convention: the bat did not change the
-            # ball's path enough to put it in play.
-            if "swinging strike" in description or "foul tip" in description:
-                totals["whiffs"] += 1
-            elif "called strike" in description:
-                totals["called_strikes"] += 1
+            count_pitch(totals, event)
 
             hit = event.get("hitData") or {}
             coords = hit.get("coordinates") or {}

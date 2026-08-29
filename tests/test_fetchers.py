@@ -196,3 +196,35 @@ def test_the_majors_are_reported_as_a_promotion(api):
         2026,
     )
     assert fetchers.in_majors(levels) == {703155}
+
+
+def test_whiffs_are_only_looked_up_for_pitchers(monkeypatch):
+    """One request per outing, and none at all for a night of hitters."""
+    asked = []
+
+    def fake(game_pk):
+        asked.append(game_pk)
+        return {77: 12}
+
+    monkeypatch.setattr(fetchers.pitch_data, "whiffs_by_pitcher", fake)
+    logs = [
+        GameLog(77, "P", date(2026, 8, 28), 5001, "pitching", "AA", "T", "O", "", {}),
+        GameLog(88, "H", date(2026, 8, 28), 5002, "hitting", "AA", "T", "O", "", {}),
+    ]
+
+    assert fetchers.whiffs_for_outings(logs) == {(77, 5001): 12}
+    assert asked == [5001]
+
+
+def test_a_game_that_cannot_be_read_is_skipped(monkeypatch):
+    """The outing still has to render, reporting strikeouts alone."""
+
+    def broken(game_pk):
+        raise fetchers.statsapi.StatsApiError("no play-by-play")
+
+    monkeypatch.setattr(fetchers.pitch_data, "whiffs_by_pitcher", broken)
+    logs = [
+        GameLog(77, "P", date(2026, 8, 28), 5001, "pitching", "AA", "T", "O", "", {})
+    ]
+
+    assert fetchers.whiffs_for_outings(logs) == {}
