@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -74,9 +75,46 @@ def load_user() -> dict:
         return json.load(f)
 
 
+# Deliberately not RFC 5322, which is far looser than anything anyone should
+# put in a config file. This rejects the two things worth rejecting: shapes that
+# are obviously a typo, and whitespace, since a newline in an address would let
+# a header be injected into the outgoing message.
+_ADDRESS = re.compile(r"^[^\s@,;:<>\"\\]+@[^\s@,;:<>\"\\]+\.[^\s@,;:<>\"\\]+$")
+
+
+def valid_address(value: object) -> bool:
+    return isinstance(value, str) and bool(_ADDRESS.match(value.strip()))
+
+
 def recipients() -> list[str]:
+    """
+    Who to email, refusing to guess at anything malformed.
+
+    A bad address is raised rather than skipped. Skipping it would drop someone
+    from the list silently and permanently, which nobody would notice until they
+    wondered why the digest had stopped; a daily job that fails loudly gets
+    fixed.
+    """
     entries = load_user().get("recipients", [])
-    return [entry["email"] for entry in entries if entry.get("email")]
+    if not isinstance(entries, list):
+        raise ValueError("'recipients' in user.json must be a list.")
+
+    found: list[str] = []
+    rejected: list[str] = []
+    for entry in entries:
+        address = entry.get("email") if isinstance(entry, dict) else entry
+        if valid_address(address):
+            found.append(address.strip())
+        else:
+            rejected.append(repr(entry))
+
+    if rejected:
+        raise ValueError(
+            "Unusable recipient(s) in user.json: "
+            + ", ".join(rejected)
+            + ". Each entry needs an 'email' that looks like an address."
+        )
+    return found
 
 
 def load_env() -> dict[str, str]:

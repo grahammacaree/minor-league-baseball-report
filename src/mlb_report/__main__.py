@@ -100,7 +100,11 @@ def _deliver(digest, text: str) -> int:
         print("No recipients configured; nothing sent.")
         return 1
 
-    if digest.is_empty and not user.get("send_when_quiet", True):
+    # Silence is the default, because the quiet case is not rare. The minor
+    # league season ends in September and the digest would otherwise mail an
+    # empty report every morning until April, which is the fastest way to teach
+    # someone to filter it away.
+    if digest.is_empty and not user.get("send_when_quiet", False):
         print("Nothing worth reporting; no email sent.")
         return 0
 
@@ -112,6 +116,11 @@ def _deliver(digest, text: str) -> int:
     ]
     if missing:
         print(f"Missing SMTP settings: {', '.join(missing)}")
+        return 1
+
+    # The sender lands in a header too, so it gets the same look as a recipient.
+    if not config_loader.valid_address(env["MAIL_FROM"]):
+        print(f"MAIL_FROM is not a usable address: {env['MAIL_FROM']!r}")
         return 1
 
     emailer.send(
