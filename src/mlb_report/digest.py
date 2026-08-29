@@ -7,6 +7,7 @@ from datetime import date
 from . import trends
 from .models import GameLog, Transaction
 from .prospects import Prospect
+from .rankings import Ranked
 
 # The level abbreviation the API uses for the majors, and the one level this
 # digest deliberately says nothing about.
@@ -26,7 +27,9 @@ class PlayerContext:
     age: str | None = None
     production: str | None = None
     skills: str | None = None
-    prior: str | None = None
+    # Every level and club he has left this season, largest sample first. A
+    # promotion is the case where the stint behind him is the better evidence.
+    priors: list[str] = field(default_factory=list)
     promoted: bool = False
 
 
@@ -42,6 +45,10 @@ class Digest:
     # which is the one count that says whether the email is worth opening now.
     standouts: int = 0
     moves: list[str] = field(default_factory=list)
+    # Ranked players who have just joined the organization.
+    arrivals: list[str] = field(default_factory=list)
+    # Tracked players who have just left it.
+    departures: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -50,10 +57,10 @@ class Digest:
         Whether the day is quiet enough to skip sending.
 
         The watchlist playing is not news — they play most days. What makes an
-        email worth arriving is somebody outside it forcing his way in, or a
-        roster move.
+        email worth arriving is somebody outside it forcing his way in, a roster
+        move, or a new prospect in the system.
         """
-        return not (self.standouts or self.moves)
+        return not (self.standouts or self.moves or self.arrivals or self.departures)
 
 
 def _by_player(logs: list[GameLog]) -> dict[int, list[GameLog]]:
@@ -165,8 +172,7 @@ def _season_entry(
     if context:
         if context.skills:
             body.append(f"  {context.skills}")
-        if context.prior:
-            body.append(f"  {context.prior}")
+        body.extend(f"  {prior}" for prior in context.priors)
     return "\n".join(body)
 
 
@@ -195,6 +201,8 @@ def build(
     settings: dict,
     contexts: dict[int, PlayerContext] | None = None,
     whiffs: dict[tuple[int, int], int] | None = None,
+    arrivals: list[tuple[Transaction, Ranked]] | None = None,
+    departures: list[Transaction] | None = None,
 ) -> Digest:
     digest = Digest(report_date=report_date)
     contexts = contexts or {}
@@ -257,6 +265,21 @@ def build(
         label = "Injury" if move.is_injury else move.type_desc
         digest.moves.append(f"**{label}** — {move.description}")
 
+    # Where he was ranked, rather than what the transaction wire called him.
+    # A club's own top 30 is the closest thing to a verdict on a player, and it
+    # is the reason he is being followed here at all.
+    for transaction, ranked in arrivals or []:
+        digest.arrivals.append(
+            f"**{ranked.position} {ranked.name}** — {ranked.describe()}, "
+            f"acquired {transaction.effective_date:%-d %B}"
+        )
+
+    for move in departures or []:
+        digest.departures.append(
+            f"**{move.player_name}** — {move.description.rstrip('.')}, "
+            f"{move.effective_date:%-d %B}"
+        )
+
     unresolved = [p.name for p in tracked if p.player_id is None]
     if unresolved:
         digest.warnings.append(
@@ -302,5 +325,11 @@ def render(digest: Digest) -> str:
     out += _played_section(digest.played, digest.opponents)
     out += _section("Top 10 season lines", digest.seasons, "No seasons to report.")
     out += _section("Moves and injuries", digest.moves, "No roster moves.")
+    # Only when there is one. An empty heading every day would train the reader
+    # to skip the section on the day it finally matters.
+    if digest.arrivals:
+        out += _section("New in the system", digest.arrivals, "")
+    if digest.departures:
+        out += _section("Left the system", digest.departures, "")
     out += _section("Notes", [ADJUSTMENT_NOTE, *digest.warnings], "")
     return "\n".join(out).rstrip() + "\n"

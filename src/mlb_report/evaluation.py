@@ -39,6 +39,9 @@ class Evaluation:
     slash: str | None
     skills: list[Skill]
     is_pitcher: bool
+    # Level and club together, e.g. "AA Arkansas Travelers". The level alone
+    # stops identifying a stint the moment a player is traded without moving up.
+    where: str = ""
 
     @property
     def has_enough_sample(self) -> bool:
@@ -201,7 +204,13 @@ def evaluate(
         slash=slash,
         skills=skills,
         is_pitcher=is_pitcher,
+        where=_where(player),
     )
+
+
+def _where(player: PlayerSeason) -> str:
+    """Level and club together, which is what actually identifies a stint."""
+    return " ".join(part for part in (player.level, player.team_name) if part)
 
 
 def _sample_of(player: PlayerSeason) -> float:
@@ -211,35 +220,43 @@ def _sample_of(player: PlayerSeason) -> float:
 
 def split_stints(
     stints: list[PlayerSeason], current_level: str | None
-) -> tuple[PlayerSeason, PlayerSeason | None]:
+) -> tuple[PlayerSeason, list[PlayerSeason]]:
     """
-    Separate where a player is now from where he was.
+    Separate where a player is now from everywhere he has been.
 
     The level of his most recent game decides which stint is current, since a
     player promoted in August may still have most of his season's plate
     appearances at the level below.
+
+    Every other stint is kept, largest first, because the one he has left is
+    often the better evidence: a hitter called up in July can have three times
+    the plate appearances below, and reporting only the most recent of them
+    buries his actual season.
     """
     ordered = sorted(stints, key=_sample_of, reverse=True)
     current = next(
         (stint for stint in ordered if stint.level == current_level), ordered[0]
     )
-    others = [stint for stint in ordered if stint is not current]
-    return current, (others[0] if others else None)
+    return current, [stint for stint in ordered if stint is not current]
 
 
 def age_context(player: PlayerSeason, baseline: LeagueBaseline) -> str | None:
     """
     Where a player is, how old he is, and how that age sits against the level.
 
-    Written as "AA, 21yo, TEX -4": three quantities rather than a sentence.
-    Negative is young for the level, which is the direction that flatters a
-    prospect.
+    Written as "AA Arkansas, 21yo, TEX -4": three quantities rather than a
+    sentence. Negative is young for the level, which is the direction that
+    flatters a prospect.
+
+    The club is named alongside the level because the level alone stops
+    identifying a stint as soon as a player changes organizations without
+    changing level, which is exactly when the reader needs telling apart.
 
     Age is deliberately kept out of the rate stats. A 20-year-old posting a
     league average line in Double-A is the whole story, and folding age into
     wRC+ would bury exactly the thing worth noticing.
     """
-    parts = [player.level] if player.level else []
+    parts = [_where(player)] if _where(player) else []
 
     try:
         age: int | None = int(player.stat["age"])
@@ -318,7 +335,9 @@ def render_prior(evaluation: Evaluation) -> str | None:
     """
     if evaluation.production is None:
         return None
-    return (
-        f"Before that at {evaluation.level} ({evaluation.league_name}): "
-        f"{_full_line(evaluation)}"
-    )
+    where = evaluation.where or evaluation.level
+    league = evaluation.league_name
+    # Complex-league clubs are named for their league — "ACL Mariners" — so
+    # appending it would read "ROK ACL Mariners (ACL)".
+    suffix = f" ({league})" if league and league not in where else ""
+    return f"Before that at {where}{suffix}: {_full_line(evaluation)}"

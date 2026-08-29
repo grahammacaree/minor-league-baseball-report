@@ -8,6 +8,8 @@ from pathlib import Path
 
 from . import statsapi
 from .config_loader import load_json, user_data_dir
+from .models import Transaction
+from .rankings import Ranked
 
 _RESOLVED_IDS_FILE = "resolved_player_ids.json"
 
@@ -128,6 +130,75 @@ def resolve_player_ids(prospects: list[Prospect], season: int) -> list[Prospect]
         else Prospect(p.rank, p.name, p.position, cache.get(_normalize(p.name)))
         for p in prospects
     ]
+
+
+def without_departures(
+    tracked: list[Prospect], departures: list[Transaction]
+) -> tuple[list[Prospect], list[Transaction]]:
+    """
+    Drop players the organization has traded away.
+
+    A committed list outlives the roster it describes. Until the next capture a
+    departed prospect would keep being fetched, reported on, and counted as one
+    of the ten the digest follows most closely — all for another team's farm
+    system.
+
+    Ranks are left as they were rather than closed up. They are Pipeline's
+    numbering, not ours to renumber, and a gap at 7 is a truer description of
+    the list than promoting everyone below it.
+    """
+    gone = {move.player_id for move in departures}
+    if not gone:
+        return tracked, []
+    remaining = [p for p in tracked if p.player_id not in gone]
+    departed = [
+        move for move in departures if move.player_id in {p.player_id for p in tracked}
+    ]
+    return remaining, sorted(departed, key=lambda m: (m.effective_date, m.player_name))
+
+
+def with_acquisitions(
+    tracked: list[Prospect],
+    arrivals: list[Transaction],
+    ranked: dict[int, Ranked],
+) -> tuple[list[Prospect], list[tuple[Transaction, Ranked]]]:
+    """
+    Add acquired players that somebody had in their top 30 to the tracked list.
+
+    Being ranked anywhere is the test. It is the same judgement the committed
+    list is built from, only applied to the org a player is arriving from, and
+    it is far sharper than asking how old he is: a 24-year-old nobody ranked is
+    organizational depth, and a 24-year-old ranked fourth is the reason this
+    exists.
+
+    They are appended below the committed thirty rather than slotted into it.
+    Where an acquisition belongs in our own order is a judgement for the next
+    capture to make; until then he is followed without displacing anyone or
+    pushing into the watchlist, where he would crowd out a top ten prospect on
+    the strength of another club's opinion.
+    """
+    known = {p.player_id for p in tracked if p.player_id}
+    acquired: list[tuple[Transaction, Ranked]] = []
+    for transaction in arrivals:
+        entry = ranked.get(transaction.player_id)
+        if entry is None or transaction.player_id in known:
+            continue
+        known.add(transaction.player_id)
+        acquired.append((transaction, entry))
+
+    # Best prospect first, so a headline acquisition leads.
+    acquired.sort(key=lambda pair: pair[1].rank)
+    next_rank = max((p.rank for p in tracked), default=0)
+    added = [
+        Prospect(
+            rank=next_rank + offset,
+            name=entry.name,
+            position=entry.position,
+            player_id=entry.player_id,
+        )
+        for offset, (_, entry) in enumerate(acquired, start=1)
+    ]
+    return tracked + added, acquired
 
 
 def tracked_prospects(season: int) -> list[Prospect]:
