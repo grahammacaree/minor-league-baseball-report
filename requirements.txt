@@ -1,0 +1,6 @@
+# Runtime uses the standard library only (urllib for HTTP, smtplib for mail),
+# so the daily job has no install step beyond Python itself.
+
+# Development
+pytest>=8,<9
+ruff>=0.6,<1

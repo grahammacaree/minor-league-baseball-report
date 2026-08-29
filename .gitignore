@@ -4,6 +4,7 @@ __pycache__/
 .ruff_cache/
 .venv/
 venv/
+
 .DS_Store
 
 # Local state and secrets live in the config home, but guard against strays.
