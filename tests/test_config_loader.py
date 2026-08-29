@@ -93,8 +93,13 @@ def test_one_bad_address_is_not_quietly_dropped(tmp_path, monkeypatch):
         monkeypatch,
         recipients=[{"email": "good@example.com"}, {"email": "bad"}],
     )
-    with pytest.raises(ValueError, match="'bad'"):
+    with pytest.raises(ValueError, match="position") as raised:
         config_loader.recipients()
+
+    # Located, not quoted: in CI the entry is part of a secret and this message
+    # goes to a public log.
+    assert "position(s) 2" in str(raised.value)
+    assert "bad" not in str(raised.value)
 
 
 def test_recipients_must_be_a_list(tmp_path, monkeypatch):

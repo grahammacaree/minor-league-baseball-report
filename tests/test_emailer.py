@@ -216,6 +216,62 @@ def test_a_night_with_news_is_always_sent(monkeypatch, delivery):
     assert len(delivery) == 1
 
 
+def test_one_reader_is_never_shown_another(monkeypatch):
+    """A shared list should not introduce its members to each other."""
+    sent = {}
+    monkeypatch.setattr(
+        emailer.smtplib,
+        "SMTP",
+        lambda *args, **kwargs: _FakeSMTP(sent),
+    )
+    emailer.send(
+        smtp_host="smtp.example.com",
+        smtp_port=587,
+        smtp_user="user",
+        smtp_password="secret",
+        mail_from="digest@example.com",
+        recipients=["one@example.com", "two@example.com"],
+        subject="Mariners farm",
+        text="the digest",
+        html="<p>the digest</p>",
+    )
+
+    # Delivered to both, but neither is named in a header the other can read.
+    assert sent["envelope"] == ["one@example.com", "two@example.com"]
+    assert "one@example.com" not in sent["message"]
+    assert "two@example.com" not in sent["message"]
+
+
+class _FakeSMTP:
+    def __init__(self, record):
+        self.record = record
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def starttls(self):
+        pass
+
+    def login(self, user, password):
+        pass
+
+    def sendmail(self, mail_from, recipients, message):
+        self.record["envelope"] = recipients
+        self.record["message"] = message
+
+
+def test_the_log_counts_recipients_without_naming_them(monkeypatch, delivery, capsys):
+    """This runs in a public repository, where the log is readable by anyone."""
+    deliver_with(monkeypatch, {}, moves=["**Optioned** — sent to Everett."])
+
+    printed = capsys.readouterr().out
+    assert "1 recipient" in printed
+    assert "hi@example.com" not in printed
+
+
 def test_a_malformed_sender_stops_the_send(monkeypatch, delivery):
     """The sender lands in a header too."""
     monkeypatch.setattr(

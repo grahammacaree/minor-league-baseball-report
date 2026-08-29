@@ -73,3 +73,15 @@ artifact. Trends read from that accumulated store, so if it is ever lost the
 digest still works but streaks and rolling splits flatten until it refills. The
 artifact is uploaded even when a run fails, since the fetched logs are worth
 keeping regardless of whether the email went out.
+
+## In a public repository
+
+Workflow logs and artifacts are readable by anyone. The run therefore counts
+recipients rather than naming them, and errors about a bad address give its
+position in the list instead of quoting it, because a recipient is a fragment
+of a secret rather than a value GitHub knows to mask. The artifact holds game
+logs and play-by-play only.
+
+Pull requests from forks run `ci.yml`, which asks for no secrets and is
+triggered by `pull_request` rather than `pull_request_target`, so a fork's
+branch never runs in a job that can reach the SMTP credentials.

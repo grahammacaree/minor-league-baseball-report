@@ -100,18 +100,20 @@ def recipients() -> list[str]:
         raise ValueError("'recipients' in user.json must be a list.")
 
     found: list[str] = []
-    rejected: list[str] = []
-    for entry in entries:
+    rejected: list[int] = []
+    for position, entry in enumerate(entries, start=1):
         address = entry.get("email") if isinstance(entry, dict) else entry
         if valid_address(address):
             found.append(address.strip())
         else:
-            rejected.append(repr(entry))
+            rejected.append(position)
 
+    # Located rather than quoted. The entry is part of a secret in CI, and this
+    # error would otherwise print it into a public log.
     if rejected:
         raise ValueError(
-            "Unusable recipient(s) in user.json: "
-            + ", ".join(rejected)
+            "Unusable recipient(s) in user.json at position(s) "
+            + ", ".join(str(position) for position in rejected)
             + ". Each entry needs an 'email' that looks like an address."
         )
     return found

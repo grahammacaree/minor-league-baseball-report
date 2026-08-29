@@ -234,7 +234,10 @@ def send(
     message = MIMEMultipart("alternative")
     message["Subject"] = subject
     message["From"] = mail_from
-    message["To"] = ", ".join(recipients)
+    # Addressed to the sender, with the real recipients carried only in the
+    # envelope below. Listing them here would show everyone on the list to
+    # everyone else on it, and to anyone they forwarded a morning's digest to.
+    message["To"] = mail_from
     message.attach(MIMEText(text, "plain", "utf-8"))
     message.attach(MIMEText(html, "html", "utf-8"))
 
