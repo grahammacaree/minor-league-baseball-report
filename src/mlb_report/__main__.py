@@ -4,8 +4,8 @@ import argparse
 import sys
 from datetime import date, timedelta
 
+from . import config_loader, emailer, fetchers, pipeline, store
 from . import digest as digest_module
-from . import fetchers, pipeline, store
 from . import prospects as prospects_module
 from .config_loader import load_settings
 
@@ -84,7 +84,48 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     digest = pipeline.build_digest(args.date, season, settings)
-    print(digest_module.render(digest))
+    text = digest_module.render(digest)
+
+    if args.dry_run:
+        print(text)
+        return 0
+
+    return _deliver(digest, text)
+
+
+def _deliver(digest, text: str) -> int:
+    user = config_loader.load_user()
+    recipients = config_loader.recipients()
+    if not recipients:
+        print("No recipients configured; nothing sent.")
+        return 1
+
+    if digest.is_empty and not user.get("send_when_quiet", True):
+        print("Nothing worth reporting; no email sent.")
+        return 0
+
+    env = config_loader.load_env()
+    missing = [
+        key
+        for key in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD", "MAIL_FROM")
+        if not env.get(key)
+    ]
+    if missing:
+        print(f"Missing SMTP settings: {', '.join(missing)}")
+        return 1
+
+    emailer.send(
+        smtp_host=env["SMTP_HOST"],
+        smtp_port=int(env.get("SMTP_PORT", 587)),
+        smtp_user=env["SMTP_USER"],
+        smtp_password=env["SMTP_PASSWORD"],
+        mail_from=env["MAIL_FROM"],
+        recipients=recipients,
+        subject=emailer.subject_for(digest),
+        text=text,
+        html=emailer.markdown_to_html(text),
+    )
+    print(f"Sent to {', '.join(recipients)}")
     return 0
 
 

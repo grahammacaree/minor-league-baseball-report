@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to ~/.config/mlb-report/user.json (or $MLB_REPORT_CONFIG_HOME/user.json). Never commit the real file.",
+  "recipients": [
+    { "name": "Graham MacAree", "email": "hi@grahammacaree.com" }
+  ],
+  "send_when_quiet": true
+}

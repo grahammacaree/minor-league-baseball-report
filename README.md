@@ -43,12 +43,18 @@ left `null` for players who have not been assigned yet.
 
 ```bash
 pip install -r requirements.txt
+mkdir -p ~/.config/mlb-report
 cp config/user.example.json ~/.config/mlb-report/user.json
+cp config/env.example ~/.config/mlb-report/.env && chmod 600 ~/.config/mlb-report/.env
 ```
 
-Edit `~/.config/mlb-report/user.json` to set the digest recipients. SMTP credentials go in
-`~/.config/mlb-report/.env`, which is never committed. Override the config location with
-`MLB_REPORT_CONFIG_HOME`.
+`user.json` holds the recipient list; `.env` holds SMTP credentials. Neither is committed,
+and the split means adding someone to the digest never touches secrets. In CI the SMTP
+values come from environment variables instead, which take precedence over the file.
+Override the config location with `MLB_REPORT_CONFIG_HOME`.
+
+Set `send_when_quiet` to `false` in `user.json` to skip the email on nights when nothing
+cleared the bar.
 
 ## Usage
 
