@@ -153,5 +153,23 @@ def test_rate_stats_return_none_rather_than_zero_without_a_sample():
     assert sm.strikeout_rate({}) is None
     assert sm.walk_rate({}) is None
     assert sm.ground_ball_rate({}) is None
+    assert sm.air_rate({}) is None
+    assert sm.home_runs_per_fly_ball({}) is None
     assert sm.home_runs_per_nine({}) is None
     assert sm.strikeouts_minus_walks({}) is None
+
+
+def test_air_is_exactly_what_is_not_on_the_ground():
+    stat = {"battedBalls": 250, "groundBalls": 100}
+    assert sm.air_rate(stat) == pytest.approx(0.60)
+    assert sm.air_rate(stat) + sm.ground_ball_rate(stat) == pytest.approx(1.0)
+
+
+def test_home_runs_per_fly_ball_is_damage_per_chance_to_do_it():
+    """
+    Fly balls come from play-by-play and home runs from the season feed, so the
+    two only line up when the level has been gathered in full.
+    """
+    assert sm.home_runs_per_fly_ball({"homeRuns": 15, "flyBalls": 75}) == pytest.approx(
+        0.20
+    )

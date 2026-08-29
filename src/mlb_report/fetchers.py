@@ -103,7 +103,7 @@ def transactions(
     until: date,
 ) -> list[Transaction]:
     """
-    Moves affecting tracked prospects across the whole organization.
+    Moves affecting tracked prospects.
 
     Both ends of a promotion appear in the feed — the club a player left and the
     one he joined — so results are deduplicated on the transaction text.
@@ -120,6 +120,8 @@ def transactions(
             if player_id not in tracked:
                 continue
             effective = raw.get("effectiveDate") or raw.get("date")
+            if not effective:
+                continue
             key = (player_id, effective, raw.get("description", ""))
             if key in seen:
                 continue
@@ -133,7 +135,8 @@ def transactions(
                     description=raw.get("description", ""),
                 )
             )
-    return sorted(moves, key=lambda m: (m.effective_date, m.player_name))
+
+    return sorted(moves, key=lambda move: (move.effective_date, move.player_name))
 
 
 def lookback_window(as_of: date, days: int) -> tuple[date, date]:

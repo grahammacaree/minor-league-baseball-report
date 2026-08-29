@@ -26,7 +26,6 @@ class PlayerContext:
     age: str | None = None
     production: str | None = None
     skills: str | None = None
-    profile: str | None = None
     prior: str | None = None
     promoted: bool = False
 
@@ -36,6 +35,8 @@ class Digest:
     report_date: date
     # Level abbreviation to the lines played at it, ordered by LEVEL_ORDER.
     played: dict[str, list[str]] = field(default_factory=dict)
+    # Level to the one opponent everybody under it faced, where there was one.
+    opponents: dict[str, str] = field(default_factory=dict)
     seasons: list[str] = field(default_factory=list)
     # Players from outside the watchlist who did enough to be listed at all,
     # which is the one count that says whether the email is worth opening now.
@@ -75,7 +76,12 @@ def _level_rank(level: str) -> int:
 
 
 def _hitting_line(log: GameLog) -> str:
-    parts = [log.summary or f"{log.count('hits')}-{log.count('atBats')}"]
+    # The feed separates the batting line from the events with a pipe; a comma
+    # reads the same and keeps one separator running through the line.
+    summary = (log.summary or f"{log.count('hits')}-{log.count('atBats')}").replace(
+        " | ", ", "
+    )
+    parts = [summary]
     if steals := log.count("stolenBases"):
         parts.append(f"{steals} SB")
     return ", ".join(parts)
@@ -104,22 +110,32 @@ def game_line(log: GameLog, whiffs: int | None = None) -> str:
     return _pitching_line(log, whiffs) if log.is_pitching else _hitting_line(log)
 
 
+def _opponents(logs: list[GameLog]) -> set[str]:
+    return {log.opponent for log in logs if log.opponent}
+
+
 def _played_line(
     prospect: Prospect,
     logs: list[GameLog],
     whiffs: dict[tuple[int, int], int],
+    name_opponent: bool = False,
 ) -> str:
     """
     What a prospect did yesterday, with the level carried by the heading above.
+
+    The opponent is usually carried by the heading too, since one club plays one
+    opponent on one day. It comes back onto the line only when the heading could
+    not name a single opponent for everyone under it.
 
     Doubleheaders are joined rather than split into two entries, so a player
     appears once wherever the reader looks for him.
     """
     lines = "; ".join(
-        f"{game_line(log, whiffs.get((log.player_id, log.game_pk)))} vs {log.opponent}"
+        game_line(log, whiffs.get((log.player_id, log.game_pk)))
+        + (f" vs {log.opponent}" if name_opponent and log.opponent else "")
         for log in logs
     )
-    return f"**{prospect.rank}. {prospect.name}** — {lines}"
+    return f"**{prospect.rank}. {prospect.position} {prospect.name}**: {lines}"
 
 
 def _season_entry(
@@ -133,24 +149,22 @@ def _season_entry(
     Separated from the day's line because the two are read for different
     reasons: one is news, the other is the thing news gets judged against.
     """
-    header = f"**{prospect.rank}. {prospect.name}** ({prospect.position}"
-    header += f", {context.age}" if context and context.age else ""
-    header += ")"
+    header = f"**{prospect.rank}. {prospect.position} {prospect.name}**"
+    if context and context.age:
+        header += f" ({context.age})"
     if context and context.promoted:
         # Nothing about his day belongs here: those games are on television.
         header += f" — promoted to {MAJORS}"
 
     body = [header]
     if context and context.production:
-        body.append(f"  Season at {context.production}")
+        body.append(f"  Season: {context.production}")
     # Form is reported even when the league context is missing: a hit streak is
     # observed from the game logs alone and does not depend on a baseline.
     body.extend(f"  {marker}" for marker in form)
     if context:
         if context.skills:
             body.append(f"  {context.skills}")
-        if context.profile:
-            body.append(f"  {context.profile}")
         if context.prior:
             body.append(f"  {context.prior}")
     return "\n".join(body)
@@ -197,21 +211,30 @@ def build(
     # Everyone on the watchlist who played, and everyone below it who did
     # something worth stopping for. Grouped by level, since that is how a farm
     # system is actually read.
-    by_level: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    by_level: dict[str, list[tuple[int, Prospect, list[GameLog]]]] = defaultdict(list)
     for prospect in tracked:
         today = today_by_player.get(prospect.player_id, [])
         watched = prospect.rank <= watchlist_depth
         for level, logs in _by_level(today).items():
             shown = logs if watched else [t for t in logs if _is_notable(t, thresholds)]
             if shown:
-                by_level[level].append(
-                    (prospect.rank, _played_line(prospect, shown, whiffs))
-                )
+                by_level[level].append((prospect.rank, prospect, shown))
                 if not watched:
                     digest.standouts += 1
 
     for level in sorted(by_level, key=_level_rank):
-        digest.played[level] = [line for _, line in sorted(by_level[level])]
+        entries = sorted(by_level[level], key=lambda entry: entry[0])
+        # One club plays one opponent on one day, so the opponent belongs to the
+        # heading rather than to every line beneath it. The exception is a level
+        # where the org fields two clubs, which do not share an opponent.
+        opponents = _opponents([log for _, _, logs in entries for log in logs])
+        shared = len(opponents) == 1
+        if shared:
+            digest.opponents[level] = next(iter(opponents))
+        digest.played[level] = [
+            _played_line(prospect, logs, whiffs, name_opponent=not shared)
+            for _, prospect, logs in entries
+        ]
 
     for prospect in tracked:
         if prospect.rank > watchlist_depth:
@@ -248,20 +271,36 @@ def _section(title: str, lines: list[str], empty: str) -> list[str]:
     return [f"## {title}", "", *body, ""]
 
 
-def _played_section(played: dict[str, list[str]]) -> list[str]:
+def _played_section(
+    played: dict[str, list[str]], opponents: dict[str, str]
+) -> list[str]:
     if not played:
         return _section("Played yesterday", [], "Nobody played.")
     out = ["## Played yesterday", ""]
     for level, lines in played.items():
-        out += [f"### {level}", "", *[f"- {line}" for line in lines], ""]
+        heading = level
+        if opponent := opponents.get(level):
+            heading += f" (vs {opponent})"
+        out += [f"### {heading}", "", *[f"- {line}" for line in lines], ""]
     return out
+
+
+# What has been adjusted and what has not, since the two sit side by side on
+# every season line and look alike. Stated every day rather than only when
+# something is unusual, because a reader who has forgotten which is which has no
+# way to tell from the numbers themselves.
+ADJUSTMENT_NOTE = (
+    "wRC+ and FIP- are adjusted for park and league. Skill bars rank a player "
+    "against his own league on park-adjusted rates, but the rate printed beside "
+    "each bar is what he actually did, unadjusted. Slash lines, wOBA and raw FIP "
+    "are unadjusted throughout."
+)
 
 
 def render(digest: Digest) -> str:
     out = [f"# Mariners farm report — {digest.report_date:%A %-d %B %Y}", ""]
-    out += _played_section(digest.played)
+    out += _played_section(digest.played, digest.opponents)
     out += _section("Top 10 season lines", digest.seasons, "No seasons to report.")
     out += _section("Moves and injuries", digest.moves, "No roster moves.")
-    if digest.warnings:
-        out += _section("Notes", digest.warnings, "")
+    out += _section("Notes", [ADJUSTMENT_NOTE, *digest.warnings], "")
     return "\n".join(out).rstrip() + "\n"

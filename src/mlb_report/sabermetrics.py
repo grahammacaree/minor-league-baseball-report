@@ -157,6 +157,34 @@ def wrc_plus(
     return 100 * (relative + league_runs_per_pa) / (park_factor * league_runs_per_pa)
 
 
+def innings(stat: dict) -> float:
+    """
+    Innings pitched as a number, reading the box-score fraction correctly.
+
+    "74.1" means 74 innings and one out, not 74 and a tenth. Casting it straight
+    to a float understates the workload by up to two thirds of an inning, which
+    flows into every rate divided by it.
+    """
+    raw = str(stat.get("inningsPitched", "") or "").strip()
+    if not raw:
+        return 0.0
+    whole, _, outs = raw.partition(".")
+    try:
+        total = float(whole or 0)
+    except ValueError:
+        return 0.0
+    if outs in ("1", "2"):
+        total += int(outs) / 3
+    return total
+
+
+def earned_run_average(stat: dict) -> float | None:
+    pitched = innings(stat)
+    if pitched <= 0:
+        return None
+    return 9 * _n(stat, "earnedRuns") / pitched
+
+
 def fip_constant(league_era: float, league_stat: dict) -> float:
     """Solved per league-season so that league FIP equals league ERA."""
     innings = _n(league_stat, "inningsPitched")
@@ -171,14 +199,14 @@ def fip_constant(league_era: float, league_stat: dict) -> float:
 
 
 def fip(stat: dict, constant: float) -> float:
-    innings = _n(stat, "inningsPitched")
-    if innings <= 0:
+    pitched = innings(stat)
+    if pitched <= 0:
         return 0.0
     raw = (
         13 * _n(stat, "homeRuns")
         + 3 * (_n(stat, "baseOnBalls") + _n(stat, "hitByPitch"))
         - 2 * _n(stat, "strikeOuts")
-    ) / innings
+    ) / pitched
     return raw + constant
 
 
@@ -290,11 +318,41 @@ def pull_rate(stat: dict) -> float | None:
     return _n(stat, "pulledBalls") / placed
 
 
-def home_runs_per_nine(stat: dict) -> float | None:
-    innings = _n(stat, "inningsPitched")
-    if innings <= 0:
+def air_rate(stat: dict) -> float | None:
+    """
+    Batted balls hit in the air, as a share of batted balls.
+
+    The exact complement of the ground-ball rate, and reported instead of it for
+    hitters because lift is the half of that pairing power is read from.
+    """
+    batted = _n(stat, "battedBalls")
+    if batted <= 0:
         return None
-    return 9 * _n(stat, "homeRuns") / innings
+    return (batted - _n(stat, "groundBalls")) / batted
+
+
+def home_runs_per_fly_ball(stat: dict) -> float | None:
+    """
+    Home runs as a share of fly balls.
+
+    Power per opportunity rather than per at-bat, which is what separates a
+    hitter who does damage from one who merely gets the ball airborne often.
+
+    The numerator is the season feed's home run count and the denominator a
+    play-by-play trajectory count, so the two only agree when the season has
+    been gathered in full. Levels gathered partway through would overstate this.
+    """
+    fly_balls = _n(stat, "flyBalls")
+    if fly_balls <= 0:
+        return None
+    return _n(stat, "homeRuns") / fly_balls
+
+
+def home_runs_per_nine(stat: dict) -> float | None:
+    pitched = innings(stat)
+    if pitched <= 0:
+        return None
+    return 9 * _n(stat, "homeRuns") / pitched
 
 
 def strikeouts_minus_walks(stat: dict) -> float | None:

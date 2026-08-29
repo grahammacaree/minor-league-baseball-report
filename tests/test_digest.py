@@ -209,8 +209,20 @@ def test_render_includes_every_section():
 
 def test_render_puts_each_level_under_its_own_heading():
     output = digest_module.render(build([pitching(1), hitting(2)]))
-    assert "### AAA\n" in output and "### AA\n" in output
-    assert output.index("### AAA\n") < output.index("### AA\n")
+    levels = [
+        line.removeprefix("### ").split(" (")[0]
+        for line in output.splitlines()
+        if line.startswith("### ")
+    ]
+    assert levels == ["AAA", "AA"]
+
+
+def test_a_level_where_everyone_faced_one_club_names_it_in_the_heading():
+    """One club plays one opponent a day, so the line beneath need not repeat it."""
+    output = digest_module.render(build([pitching(1)]))
+    assert "### AA (vs Tulsa Drillers)" in output
+    # Named once, by the heading, rather than again on the line beneath it.
+    assert output.count("Tulsa Drillers") == 1
 
 
 def test_render_notes_empty_sections_rather_than_dropping_them():

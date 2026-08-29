@@ -24,7 +24,7 @@ class ParkLookup(Protocol):
 
 
 # Bump whenever the cached shape changes, so stale files are refetched.
-_CACHE_SCHEMA = 2
+_CACHE_SCHEMA = 3
 
 _STAT_KEYS = (
     "age",
@@ -67,6 +67,9 @@ class PlayerSeason:
     group: str
     stat: dict = field(repr=False)
     team_id: int = 0
+    # The level this row's stats were earned at, as a sport id, so play-by-play
+    # gathered per level can be matched to the right stint of a season.
+    sport_id: int = 0
 
     @property
     def events(self) -> sm.Events:
@@ -133,6 +136,7 @@ def _merge_pool(
                 group=group,
                 stat={key: merged[key] for key in _STAT_KEYS if key in merged},
                 team_id=row.get("team", {}).get("id", 0),
+                sport_id=row.get("sport", {}).get("id", 0),
             )
         )
     return pool
@@ -204,27 +208,33 @@ def _with_batted_ball(
 
     Seasons that have not been gathered simply leave the counts absent, and the
     rates then report nothing rather than zero.
+
+    Counts are kept per level rather than per season. A player promoted in July
+    has one row per stint, each carrying that level's home run total, so pooling
+    his batted balls across both would divide one level's damage by two levels'
+    chances at it.
     """
     side = "pitchers" if group == "pitching" else "batters"
-    totals: dict[int, dict[str, int]] = {}
+    totals: dict[tuple[int, int], dict[str, int]] = {}
     for sport_id in sport_ids:
         games = pitch_data.load_cached(sport_id, season)
         if not games:
             continue
         for player, counts in pitch_data.by_player(games, side).items():
             running = totals.setdefault(
-                player, dict.fromkeys(pitch_data.PLAYER_FIELDS, 0)
+                (sport_id, player), dict.fromkeys(pitch_data.PLAYER_FIELDS, 0)
             )
             for name, value in counts.items():
                 running[name] += value
 
     for player in pool:
-        counts = totals.get(player.player_id)
+        counts = totals.get((player.sport_id, player.player_id))
         if not counts:
             continue
         # Two denominators, not one: a batted ball is classified by trajectory
         # slightly more often than it is given a landing spot.
         player.stat["groundBalls"] = counts["ground"]
+        player.stat["flyBalls"] = counts["fly"]
         player.stat["battedBalls"] = sum(
             counts[field] for field in pitch_data.TRAJECTORY_FIELDS
         )
@@ -253,34 +263,40 @@ def _qualified(
     return [player for player in pool if _sum([player], field_name) >= minimum]
 
 
+# Power is three rates rather than one. Isolated power answers how much damage
+# a hitter did, which the slash line already carries; these answer how he did
+# it, and separate the hitter who lifts and pulls without punishing the ball
+# from the one who punishes it.
 HITTING_METRICS = {
     "contact": sm.contact_rate,
-    "power": lambda stat: sm.isolated_power(sm.events(stat)),
+    "home_runs_per_fly": sm.home_runs_per_fly_ball,
+    "air": sm.air_rate,
+    "pull": sm.pull_rate,
     "discipline": sm.walk_rate,
     "solid_contact": sm.solid_contact_rate,
     "strikeout_rate": sm.strikeout_rate,
 }
 
+# The pitching side mirrors it, one metric at a time: whiffs against contact,
+# home runs per fly against the same, ground balls in place of air since one is
+# the complement of the other, pull against pull, walks against walks.
 PITCHING_METRICS = {
     "contact_suppression": sm.whiff_rate,
+    "home_runs_per_fly": sm.home_runs_per_fly_ball,
     "damage_limitation": lambda stat: sm.ground_ball_rate(stat),
+    "pull": sm.pull_rate,
     "command": lambda stat: sm.walk_rate(stat),
     "strikeouts_minus_walks": sm.strikeouts_minus_walks,
 }
 
-# Batted-ball shape, reported for hitters and pitchers alike. These are kept
-# apart from the skills above and from each other, because neither has a good
-# end: a high ground-ball rate is a virtue in a sinkerballer and a warning in a
-# hitter with power, and pull is a description of an approach rather than a
-# grade of it. They are ranked only so the number can be read against the
-# league, not scored.
-PROFILE_METRICS = {
-    "ground_ball": sm.ground_ball_rate,
-    "pull": sm.pull_rate,
+# Lower is better, so the percentile is inverted before it is reported. Keyed by
+# group because the same metric can point either way: lifting and pulling is how
+# a hitter does damage and therefore the direction that flatters him, while the
+# same contact allowed is the pitcher's problem.
+INVERTED_METRICS = {
+    "hitting": {"strikeout_rate"},
+    "pitching": {"command", "home_runs_per_fly", "pull"},
 }
-
-# Lower is better, so the percentile is inverted before it is reported.
-INVERTED_METRICS = {"strikeout_rate", "command"}
 
 
 # Which park component each skill is measured against. A rate is adjusted by
@@ -289,7 +305,10 @@ INVERTED_METRICS = {"strikeout_rate", "command"}
 # called strike, and parks move the two independently of each other.
 METRIC_COMPONENTS = {
     "contact": "whiffs",
-    "power": "extra_base_hits",
+    "home_runs_per_fly": "home_runs",
+    # The air rate is one minus the ground-ball rate, so the park's effect on it
+    # is the ground-ball factor turned over.
+    "air": "ground_balls",
     # Walks are adjusted by the park's measured effect on walks. The
     # called-strike factor describes the mechanism but tracks the outcome only
     # weakly and inconsistently (-0.08, -0.37, -0.33 across three levels), so
@@ -301,13 +320,13 @@ METRIC_COMPONENTS = {
     "damage_limitation": "hits_in_play",
     "command": "walks",
     "strikeouts_minus_walks": "strikeouts",
-    "ground_ball": "ground_balls",
     "pull": "pull",
 }
 
-# A park that inflates whiffs deflates contact, so that factor is flipped
-# before it is applied. Every other pairing moves in the same direction.
-INVERSE_OF_COMPONENT = {"contact"}
+# A park that inflates whiffs deflates contact, and one that inflates ground
+# balls deflates air, so those factors are flipped before they are applied.
+# Every other pairing moves in the same direction.
+INVERSE_OF_COMPONENT = {"contact", "air"}
 
 
 def park_adjust(
@@ -344,7 +363,6 @@ def build(
     are still measured with theirs baked in.
     """
     metrics = PITCHING_METRICS if group == "pitching" else HITTING_METRICS
-    metrics = {**metrics, **PROFILE_METRICS}
     by_league: dict[int, list[PlayerSeason]] = {}
     for player in pool:
         by_league.setdefault(player.league_id, []).append(player)
@@ -371,7 +389,11 @@ def build(
             baseline.woba_scale = obp / raw if raw > 0 else 1.0
             baseline.league_woba = obp
         else:
-            innings = totals.get("inningsPitched", 0.0)
+            # Summed through the box-score reader rather than added as raw
+            # floats: ".1" is one out, and adding a third of an inning as a
+            # tenth across a whole league drifts by hundreds of innings.
+            innings = sum(sm.innings(player.stat) for player in players)
+            totals["inningsPitched"] = innings
             era = 9 * totals.get("earnedRuns", 0.0) / innings if innings else 0.0
             baseline.fip_constant = sm.fip_constant(era, totals)
             baseline.league_fip = era

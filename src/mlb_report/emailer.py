@@ -19,11 +19,13 @@ from .digest import Digest
 _BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
 _CODE = re.compile(r"`([^`]+)`")
 
-# A skill as evaluation.render_skills writes it: "Contact 58th". Recognised here
+# A skill as evaluation.render_skills writes it: "SwStr% 13.1% 66th" — the
+# metric's name, its actual rate, then where that rate ranks. Recognised here
 # rather than passed through as structured data because the digest is one
 # markdown document that becomes both the text and the HTML part, and the text
-# part wants exactly these words.
-_SKILL = re.compile(r"^([A-Za-z](?:[A-Za-z ]*[A-Za-z])?) (\d{1,3})(st|nd|rd|th)$")
+# part wants exactly these words. Metric names carry no spaces, which is what
+# lets the three fields be told apart.
+_SKILL = re.compile(r"^(\S+) (\d+\.\d%) (\d{1,3})(st|nd|rd|th)$")
 
 # Bars are drawn as table cells with a background colour, not as images or CSS
 # widths. Mail clients block images by default and Outlook's desktop renderer
@@ -63,11 +65,12 @@ def skill_bars(line: str) -> str | None:
 
     rows = []
     for match in matches:
-        name, percentile = match.group(1), int(match.group(2))
+        name, value, percentile = match.group(1), match.group(2), int(match.group(3))
         rows.append(
             f'<tr><td style="{_STYLE["bar_label"]}">{name}</td>'
+            f'<td style="{_STYLE["bar_value"]}">{value}</td>'
             f'<td style="{_STYLE["bar_track"]}">{_bar(percentile)}</td>'
-            f'<td style="{_STYLE["bar_rank"]}">{percentile}{match.group(3)}</td></tr>'
+            f'<td style="{_STYLE["bar_rank"]}">{percentile}{match.group(4)}</td></tr>'
         )
     return (
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
@@ -98,8 +101,14 @@ _STYLE = {
     "em": "color:#6e6e73;font-style:normal",
     "bars": "margin:6px 0 2px;border-collapse:collapse",
     "bar_label": (
-        "font-size:12px;color:#6e6e73;padding:2px 10px 2px 0;"
+        "font-size:12px;color:#6e6e73;padding:2px 8px 2px 0;"
         "white-space:nowrap;vertical-align:middle"
+    ),
+    # The rate itself, right-aligned so the decimal points line up down the
+    # column and the five numbers can be compared at a glance.
+    "bar_value": (
+        "font-size:12px;color:#1d1d1f;padding:2px 10px 2px 0;text-align:right;"
+        "white-space:nowrap;vertical-align:middle;font-variant-numeric:tabular-nums"
     ),
     "bar_track": "padding:2px 0;vertical-align:middle;width:108px",
     "bar_rank": (

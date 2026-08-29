@@ -38,7 +38,6 @@ class Evaluation:
     production_label: str
     slash: str | None
     skills: list[Skill]
-    profile: list[Skill]
     is_pitcher: bool
 
     @property
@@ -63,34 +62,70 @@ def _slash_line(events: sm.Events, woba: float) -> str:
     )
 
 
+# Metrics are named for what they are rather than for the virtue they imply. A
+# reader who knows the game can tell what a 4% walk rate means without being
+# told it is "command", and one who does not is better served by a number he can
+# look up than by a word he cannot.
+#
+# A trailing arrow marks a rate whose bar is inverted, so that a long bar always
+# means good and the label always says which direction is the good one.
+def _pitching_season(stat: dict, player_fip: float) -> str:
+    """
+    A pitcher's season the way a box score would give it, then FIP.
+
+    The counting line comes first because it is what happened, and ERA and FIP
+    follow as two readings of it: what the runs say, and what the strikeouts,
+    walks and home runs say they should have been.
+    """
+    def count(key: str) -> int:
+        try:
+            return int(float(stat.get(key, 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    parts = [
+        f"{stat.get('inningsPitched', '0.0')} IP",
+        f"{count('runs')} R",
+        f"{count('homeRuns')} HR",
+        f"{count('strikeOuts')} K",
+        f"{count('baseOnBalls')} BB",
+    ]
+    era = sm.earned_run_average(stat)
+    if era is not None:
+        parts.append(f"{era:.2f} ERA")
+    parts.append(f"{player_fip:.2f} FIP")
+    return ", ".join(parts)
+
+
 SKILL_LABELS = {
-    "contact": "Contact",
-    "power": "Power",
-    "discipline": "Discipline",
-    "contact_suppression": "Whiffs",
-    "damage_limitation": "Grounders",
-    "command": "Command",
+    "contact": "Contact%",
+    "home_runs_per_fly": "HR/FB",
+    "air": "Air%",
+    "pull": "Pull%",
+    "discipline": "BB%",
+    # Whiffs per swing, not per pitch: naming it SwStr% would promise a stat
+    # around 11% and then show one around 35%.
+    "contact_suppression": "Whiff%",
+    "damage_limitation": "GB%",
+    "command": "BB%",
 }
 
+# Five bars a side, mirrored: bat-to-ball, damage on contact, batted-ball shape,
+# direction, and the walk. A hitter's power is three of them rather than one,
+# because a hitter who lifts and pulls without clearing fences is a different
+# player from one who does neither and still runs a high HR/FB.
 HEADLINE_SKILLS = {
-    "hitting": ("contact", "power", "discipline"),
-    "pitching": ("contact_suppression", "damage_limitation", "command"),
+    "hitting": ("contact", "home_runs_per_fly", "air", "pull", "discipline"),
+    "pitching": (
+        "contact_suppression",
+        "home_runs_per_fly",
+        "damage_limitation",
+        "pull",
+        "command",
+    ),
 }
 
-# Reported as rates with a rank beside them rather than as grades, and kept off
-# the headline line, because neither has a good end.
-PROFILE_LABELS = {
-    "ground_ball": "grounders",
-    "pull": "pulled",
-}
-
-# A pitcher's grounder rate is already a headline skill, where it does have a
-# good end: keeping it out of his profile line stops the same number appearing
-# twice in two different framings.
-PROFILE_SKILLS = {
-    "hitting": ("ground_ball", "pull"),
-    "pitching": ("pull",),
-}
+INVERTED_MARK = "\u2193"
 
 
 def evaluate(
@@ -102,6 +137,7 @@ def evaluate(
 ) -> Evaluation:
     is_pitcher = player.group == "pitching"
     metrics = PITCHING_METRICS if is_pitcher else HITTING_METRICS
+    inverted = INVERTED_METRICS[player.group]
     events = player.events
 
     sample = int(
@@ -110,31 +146,28 @@ def evaluate(
         else events.plate_appearances
     )
 
-    def rank(name: str, metric) -> Skill:
-        value = metric(player.stat)
-        # Adjusted with the same factor the league distribution was built
-        # from, or the comparison is between different things.
+    def rank(name: str) -> Skill:
+        observed = metrics[name](player.stat)
+        # Ranked on the park-adjusted value, using the same factor the league
+        # distribution was built from, or the comparison is between different
+        # things. Reported as the observed rate, because that is what actually
+        # happened and is the number a reader can check anywhere else.
+        adjusted = observed
         if park_components is not None:
-            value = baselines.park_adjust(value, name, park_components)
-        percentile = baseline.percentile(name, value)
-        if percentile is not None and name in INVERTED_METRICS:
-            percentile = 100 - percentile
-        return Skill(name, percentile, value)
+            adjusted = baselines.park_adjust(observed, name, park_components)
+        percentile = baseline.percentile(name, adjusted)
+        label = SKILL_LABELS[name]
+        if name in inverted:
+            label += INVERTED_MARK
+            if percentile is not None:
+                percentile = 100 - percentile
+        return Skill(label, percentile, observed)
 
     skills: list[Skill] = []
-    profile: list[Skill] = []
     if sample >= minimum_sample:
         # Below the sample floor a percentile is noise dressed up as insight,
         # so no skill line is produced at all.
-        for name in HEADLINE_SKILLS[player.group]:
-            ranked = rank(name, metrics[name])
-            skills.append(Skill(SKILL_LABELS[name], ranked.percentile, ranked.value))
-        for name in PROFILE_SKILLS[player.group]:
-            ranked = rank(name, baselines.PROFILE_METRICS[name])
-            if ranked.value is not None:
-                profile.append(
-                    Skill(PROFILE_LABELS[name], ranked.percentile, ranked.value)
-                )
+        skills = [rank(name) for name in HEADLINE_SKILLS[player.group]]
     else:
         return Evaluation(
             player_id=player.player_id,
@@ -145,14 +178,13 @@ def evaluate(
             production_label="FIP-" if is_pitcher else "wRC+",
             slash=None,
             skills=skills,
-            profile=profile,
             is_pitcher=is_pitcher,
         )
 
     if is_pitcher:
         player_fip = sm.fip(player.stat, baseline.fip_constant)
         production = sm.fip_minus(player_fip, baseline.league_fip, park_factor)
-        slash = f"{player_fip:.2f} FIP"
+        slash = _pitching_season(player.stat, player_fip)
     else:
         production = sm.wrc_plus(
             events, baseline.runs_per_pa, baseline.raa_per_pa, park_factor
@@ -168,7 +200,6 @@ def evaluate(
         production_label="FIP-" if is_pitcher else "wRC+",
         slash=slash,
         skills=skills,
-        profile=profile,
         is_pitcher=is_pitcher,
     )
 
@@ -198,28 +229,32 @@ def split_stints(
 
 def age_context(player: PlayerSeason, baseline: LeagueBaseline) -> str | None:
     """
-    A player's age, and his age relative to level.
+    Where a player is, how old he is, and how that age sits against the level.
 
-    Written as a signed number against the league code — "TEX: -5" — because it
-    is read as a quantity rather than a sentence. Negative is young for the
-    level, which is the direction that flatters a prospect.
+    Written as "AA, 21yo, TEX -4": three quantities rather than a sentence.
+    Negative is young for the level, which is the direction that flatters a
+    prospect.
 
-    Deliberately kept out of the rate stats. A 20-year-old posting a league
-    average line in Double-A is the whole story, and folding age into wRC+
-    would bury exactly the thing worth noticing.
+    Age is deliberately kept out of the rate stats. A 20-year-old posting a
+    league average line in Double-A is the whole story, and folding age into
+    wRC+ would bury exactly the thing worth noticing.
     """
-    raw_age = player.stat.get("age")
-    if raw_age is None or baseline.average_age is None:
-        return None
-    try:
-        age = int(raw_age)
-    except (TypeError, ValueError):
-        return None
+    parts = [player.level] if player.level else []
 
-    gap = round(age - baseline.average_age)
-    # A signed zero reads as a mistake rather than as "typical for the level".
-    relative = f"{gap:+d}" if gap else "0"
-    return f"{age}, {baseline.league_name}: {relative}"
+    try:
+        age: int | None = int(player.stat["age"])
+    except (KeyError, TypeError, ValueError):
+        age = None
+
+    if age is not None:
+        parts.append(f"{age}yo")
+        if baseline.average_age is not None:
+            gap = round(age - baseline.average_age)
+            # A signed zero reads as a mistake rather than "typical for the level".
+            relative = f"{gap:+d}" if gap else "0"
+            parts.append(f"{baseline.league_name} {relative}")
+
+    return ", ".join(parts) if parts else None
 
 
 def _ordinal(value: int) -> str:
@@ -231,50 +266,59 @@ def _ordinal(value: int) -> str:
 
 
 def render_skills(evaluation: Evaluation) -> str | None:
+    """
+    Each skill as its name, its actual rate, and where that rate ranks.
+
+    The rate is carried alongside the rank because a percentile alone says a
+    player is better than his peers without ever saying at what: 90th in HR/FB
+    means one thing in the California League and another in the PCL, and only
+    the number itself settles it.
+    """
     parts = [
-        f"{skill.name} {_ordinal(skill.percentile)}"
+        f"{skill.name} {skill.value * 100:.1f}% {_ordinal(skill.percentile)}"
         for skill in evaluation.skills
-        if skill.percentile is not None
+        if skill.percentile is not None and skill.value is not None
     ]
     return " · ".join(parts) if parts else None
 
 
-def render_profile(evaluation: Evaluation) -> str | None:
-    """
-    Batted-ball shape, as rates with the league rank beside them.
-
-    The rate leads and the rank follows, because unlike the skills these are
-    read for what they say about a player's approach rather than for how high
-    they are.
-    """
-    parts = []
-    for entry in evaluation.profile:
-        if entry.value is None:
-            continue
-        share = f"{entry.value * 100:.0f}% {entry.name}"
-        if entry.percentile is not None:
-            share += f" ({_ordinal(entry.percentile)})"
-        parts.append(share)
-    return " · ".join(parts) if parts else None
-
-
-def render_production(evaluation: Evaluation) -> str | None:
-    if evaluation.production is None:
-        return None
-    unit = "BF" if evaluation.is_pitcher else "PA"
+def _full_line(evaluation: Evaluation) -> str:
+    # A pitcher's line already opens with his innings, which is the sample; a
+    # batters-faced count on the end would only say it again less clearly.
+    if evaluation.is_pitcher:
+        return (
+            f"{evaluation.slash}, {evaluation.production:.0f} "
+            f"{evaluation.production_label}"
+        )
     return (
-        f"{evaluation.level} ({evaluation.league_name}): {evaluation.slash}, "
-        f"{evaluation.production:.0f} {evaluation.production_label} "
-        f"in {evaluation.sample} {unit}"
+        f"{evaluation.slash}, {evaluation.production:.0f} "
+        f"{evaluation.production_label} in {evaluation.sample} PA"
     )
 
 
-def render_prior(evaluation: Evaluation) -> str | None:
-    """The level a player came from, so a promotion carries its own context."""
+def render_production(evaluation: Evaluation) -> str | None:
+    """
+    The current stint, with no level on it.
+
+    The header above already says where he is, and saying it twice in two lines
+    reads as a stutter.
+    """
     if evaluation.production is None:
         return None
-    unit = "BF" if evaluation.is_pitcher else "PA"
+    return _full_line(evaluation)
+
+
+def render_prior(evaluation: Evaluation) -> str | None:
+    """
+    The level a player came from, at the same depth as where he is now.
+
+    A promotion is exactly the case where the previous stint is the larger body
+    of evidence — a hitter called up in July can have twice the plate
+    appearances below — so abbreviating it buries the better sample.
+    """
+    if evaluation.production is None:
+        return None
     return (
-        f"Before that at {evaluation.level}: {evaluation.production:.0f} "
-        f"{evaluation.production_label} in {evaluation.sample} {unit}"
+        f"Before that at {evaluation.level} ({evaluation.league_name}): "
+        f"{_full_line(evaluation)}"
     )

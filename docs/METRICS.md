@@ -77,26 +77,62 @@ means the same thing at every level.
 | Skill | Hitters | Pitchers |
 |-------|---------|----------|
 | Contact | swings that make contact | whiff rate |
-| Power / damage | isolated power | ground-ball rate |
+| Power / damage | three rates, below | ground-ball rate |
 | Discipline / command | walk rate | walk rate, inverted |
 
 Walk rate is inverted for pitchers, so a low rate ranks high.
 
+### Power, as three rates
+
+Isolated power answers how much damage a hitter did, which the slash line beside
+it already carries. These answer how he did it:
+
+| Rate | Numerator | Denominator |
+|------|-----------|-------------|
+| HR/FB | home runs (season feed) | fly balls (play-by-play) |
+| Air | batted balls not on the ground | batted balls |
+| Pull | batted balls to the pull side | batted balls with a landing spot |
+
+Air and pull describe the approach, HR/FB whether it is backed by damage, and a
+hitter can be loud in one and quiet in another. Keeping them apart is the point:
+a hitter who lifts and pulls constantly without clearing fences is a different
+player from one who does neither and still runs a high HR/FB, and a single power
+grade would report them as the same.
+
+HR/FB is the one rate here built from two sources, so it is only honest where a
+level's play-by-play has been gathered in full — a season gathered partway
+through would divide a full season's home runs by a partial count of fly balls
+and overstate every hitter at that level. Coverage is checked before it is
+trusted; at the time of writing all four full-season levels are complete for
+2026.
+
+The counts are also matched to the **stint** they were earned in rather than
+pooled across the season. A player promoted in July has one row per level, each
+carrying that level's home run total, so pooling his batted balls would divide
+one level's damage by two levels' chances at it. This showed up plainly: a
+Triple-A hitter slugging .550 was ranking 46th in HR/FB because his Double-A fly
+balls were padding the denominator, and he moved to 93rd once the two were
+separated. Ratios of two play-by-play counts, such as air and pull, survived the
+pooling unharmed, since both halves were inflated equally.
+
 ### Batted-ball profile
 
-Two further rates are reported for hitters and pitchers alike, on their own line
-and deliberately not folded into the skills above or into each other:
+Pitchers carry one further rate on its own line, deliberately not folded into
+the skills above:
 
 | Rate | Denominator | Source |
 |------|-------------|--------|
-| Ground balls | batted balls | play-by-play trajectory |
 | Pull | batted balls with a landing spot | play-by-play coordinates |
 
-Neither is graded, because neither has a good end. A high ground-ball rate is a
-virtue in a sinkerballer and a warning sign in a hitter with power; pull rate
-describes an approach rather than ranking it. Both are shown as the rate itself
-with the league percentile in parentheses, so the number leads and the rank only
-places it.
+It is not graded, because it has no good end: pull rate describes an approach
+rather than ranking it. It is shown as the rate itself with the league
+percentile in parentheses, so the number leads and the rank only places it. A
+pitcher's ground-ball rate is left out because it is already a headline skill
+for him, where it does have a good end.
+
+Hitters have no profile line at all. Their pull rate is now a power bar, and
+their ground-ball rate is exactly one minus the air rate beside it, so reporting
+both would be the same number told twice and backwards.
 
 Ground-ball rate is taken from play-by-play even though `seasonAdvanced` carries
 its own ground-ball counts, hits included, which sum exactly to `ballsInPlay`
@@ -121,9 +157,11 @@ percentile is noise presented as insight, so no skill line is produced at all.
 ### Park adjustment, and the trap in it
 
 Skills are park-adjusted, each against the component it belongs to — contact and
-whiffs against the whiff factor, power against extra-base hits, discipline and
-command against walks, ground balls and pull against their own factors. Contact
-is inverted first, since a park that inflates whiffs deflates contact.
+whiffs against the whiff factor, HR/FB against home runs, discipline and command
+against walks, ground balls and pull against their own factors. Air is adjusted
+against the ground-ball factor, since it is one minus that rate. Contact and air
+are both inverted first, because a park that inflates whiffs deflates contact
+and one that inflates grounders deflates the air rate.
 
 **The entire league pool is re-ranked on adjusted values.** Adjusting one
 player and looking him up in an unadjusted distribution would double-count,
@@ -276,7 +314,8 @@ and treating the two as equally well measured would leave the spray and
 trajectory factors noisier than they appear.
 
 The same play-by-play pass also produces per-player batted-ball totals, which is
-where pull rate and ground-ball rate in the skills section come from. Unlike the
+where the air, pull and ground-ball rates in the skills section come from, along
+with the fly balls under HR/FB. Unlike the
 park factors, that half is needed for the **current** season, so the season in
 progress is topped up incrementally: `gather` skips games already cached, which
 during the season is a few hundred new games a day rather than a full backfill.
