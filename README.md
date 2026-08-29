@@ -8,19 +8,24 @@ No game recaps, no LLM-written narrative. Just the prospects.
 ## What the email contains
 
 **Played yesterday.** Every top-ten prospect who played, whatever kind of night he
-had, plus anyone from 11–30 whose line cleared a threshold worth an email. Hitter get standard lines, pitchers have swinging strikes (whiffs) included.  Grouped
-by level. A prospect who did not play is simply absent.
+had, plus anyone from 11–30 whose line cleared a threshold worth an email. Hitters get
+standard lines; pitchers have swinging strikes (whiffs) included. Grouped by level. A
+prospect who did not play is simply absent.
 
-**Top ten season lines.** The season so far, with each player's standard line presented. Recent hot and cold streaks are noted. They're then ranked against their
-league on five key park-adjusted skills each. Previous levels that seasons are noted after the skill block. 
+**Top ten season lines.** The season so far, with each player's standard line presented.
+Recent hot and cold streaks are noted. They're then ranked against their league,
+park-adjusted, on five key skills. Earlier levels from this season are noted after the
+skill block.
 
 **Moves and injuries**, and, when there are any, players who have just joined the
-organization or left it. Names link to the player's page on MLB.com. Rankings lead, so the shape of the system is
-readable at a glance.
+organization or left it. Names link to the player's page on MLB.com. Rankings lead, so
+the shape of the system is readable at a glance.
 
 ## What it is trying to be
 
-A smart replacement for hunting through box scores manually. Since we have some opportunity to process data, we do so. Statistics are adjusted ...
+A smart replacement for hunting through box scores manually. Since we have some
+opportunity to process data, we do so. Statistics are adjusted before they are
+reported:
 
 - **Against league, not level.** The Texas League and the Eastern League are
   both Double-A and are not the same run environment.
@@ -52,9 +57,10 @@ Everything comes from public MLB endpoints, unauthenticated and free:
 Game logs are fetched per player rather than per affiliate, so a midseason promotion
 needs no configuration change.
 
-The daily run is deliberately cheap. Play-by-play costs a request per game, so the
-season-scale gathering behind park factors happens offline, and the daily job asks
-only about yesterday's outings.
+Play-by-play costs a request per game, so it is cached rather than refetched. The
+season-scale work behind park factors happens offline; the scheduled job tops the cache
+up before each digest, which is a backfill the first time and a day's games thereafter.
+Building the digest itself asks only about yesterday's outings.
 
 ## Keeping the tracked list updated
 
@@ -69,8 +75,9 @@ between captures:
   not just the Mariners': it is the test for whether an acquisition is worth
   following.
 
-A player traded within a level is the awkward case, since the leaderboards pool their
-season into a single row under his new club and the halves cannot be separated. In this we use a weighted blend of park and league to assess production.
+A player traded within a level is the awkward case, since the leaderboards pool his
+season into a single row under his new club and the halves cannot be separated. In this
+case we use a weighted blend of park and league to assess production.
 
 ## Maintaining the ranking
 
@@ -90,8 +97,10 @@ Those ids are worth more than the rankings themselves. They are read off the sam
 the tracked list comes from, so they resolve prospects the Mariners list names without
 an id — usually recent draftees with no roster entry yet — without a roster scan.
 
-The Playwright dependency is for this capture alone. The daily digest uses the standard library
-only, so the job that actually sends mail has no install step beyond Python.
+The Playwright dependency is for this capture alone: `mlb.com` serves only the top five
+to a non-browser client, and the rest of the list appears after a click. The daily
+digest uses the standard library only, so the job that actually sends mail has no
+install step beyond Python.
 
 ## Setup
 
@@ -107,6 +116,12 @@ and the split means adding someone to the digest never touches secrets. In CI th
 values come from environment variables instead, which take precedence over the file.
 Override the config location with `MLB_REPORT_CONFIG_HOME`.
 
+Readers are carried in the SMTP envelope and the message is addressed to the sender, so
+nobody on the list is shown to anybody else on it, and the run logs a count rather than
+the addresses. This repository is public and its workflow logs are readable by anyone;
+[docs/SECURITY.md](docs/SECURITY.md) sets out what that means for the credentials and
+for the reader list.
+
 Nothing is sent on a night when nothing cleared the bar. The minor league season ends in
 September, so the alternative is an empty digest every morning until April. Set
 `send_when_quiet` to `true` in `user.json` if you would rather have the mail regardless.
@@ -114,9 +129,15 @@ September, so the alternative is an empty digest every morning until April. Set
 ## Usage
 
 ```bash
-./scripts/run              # build and send today's digest
-./scripts/run --dry-run    # print the digest to stdout instead of emailing
+./scripts/run                # build and send today's digest
+./scripts/run --dry-run      # print the digest to stdout instead of emailing
+./scripts/gather-pitch-data  # top up the play-by-play the skill bars are built from
 ```
+
+Every run reports what it found and what it went without — pool sizes, games held per
+level, park factor coverage, how many skill bars were rendered — because most gaps here
+are silent by design. A missing cache means fewer bars, not an error, and the summary is
+what tells the two apart.
 
 ## Development
 

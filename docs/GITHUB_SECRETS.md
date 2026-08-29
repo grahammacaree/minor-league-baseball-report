@@ -77,11 +77,7 @@ keeping regardless of whether the email went out.
 ## In a public repository
 
 Workflow logs and artifacts are readable by anyone. The run therefore counts
-recipients rather than naming them, and errors about a bad address give its
-position in the list instead of quoting it, because a recipient is a fragment
-of a secret rather than a value GitHub knows to mask. The artifact holds game
-logs and play-by-play only.
-
-Pull requests from forks run `ci.yml`, which asks for no secrets and is
-triggered by `pull_request` rather than `pull_request_target`, so a fork's
-branch never runs in a job that can reach the SMTP credentials.
+recipients rather than naming them, the mail carries its readers in the
+envelope rather than in a header, and a fork's pull request runs in a job with
+no access to these secrets. [SECURITY.md](SECURITY.md) sets out what is being
+protected and how.
