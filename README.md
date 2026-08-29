@@ -53,8 +53,9 @@ and the split means adding someone to the digest never touches secrets. In CI th
 values come from environment variables instead, which take precedence over the file.
 Override the config location with `MLB_REPORT_CONFIG_HOME`.
 
-Set `send_when_quiet` to `false` in `user.json` to skip the email on nights when nothing
-cleared the bar.
+Nothing is sent on a night when nothing cleared the bar. The minor league season ends in
+September, so the alternative is an empty digest every morning until April. Set
+`send_when_quiet` to `true` in `user.json` if you would rather have the mail regardless.
 
 ## Usage
 
