@@ -20,6 +20,7 @@ Everything comes from public MLB endpoints, unauthenticated and free:
 | Source | Used for |
 |--------|----------|
 | `config/prospects.json` | The Pipeline top 30 ranking |
+| `config/prospect_rankings.json` | Every organization's top 30, for spotting acquisitions |
 | `statsapi.mlb.com` rosters | Resolving prospect names to MLB player ids |
 | `statsapi.mlb.com` game logs | Per-player daily lines, at whatever level they're playing |
 | `statsapi.mlb.com` transactions | Roster moves and injury placements |
@@ -29,15 +30,24 @@ needs no configuration change.
 
 ## Maintaining the ranking
 
-`mlb.com/prospects/mariners` only serves the top five to non-browser clients — the rest of
-the list is rendered client-side and cannot be fetched with a plain HTTP request. So the
-ranking is committed rather than scraped.
+`mlb.com/prospects/mariners` only serves the top five to non-browser clients — the rest
+of the list appears only after a click. It cannot be fetched with a plain HTTP request,
+so the rankings are captured with a browser and committed.
 
 MLB Pipeline reworks the org lists twice a season, in the spring and again after the
-trade deadline. When a refresh is due, the digest says so. Regenerating it means reading
-the table off the page and updating `config/prospects.json`; only `rank`, `name`, and
-`position` matter, since ids are resolved from affiliate rosters at runtime and may be
-left `null` for players who have not been assigned yet.
+trade deadline. When a refresh is due, the digest says so.
+
+```bash
+scripts/capture-rankings
+```
+
+That walks all thirty organizations and writes `config/prospect_rankings.json`, reading
+only an ordered list of player ids off each page; names and positions come from the Stats
+API. A scheduled workflow runs the same job after each Pipeline update and opens a pull
+request with the result.
+
+Playwright is needed for that capture alone. The daily digest uses the standard library
+only, so the job that actually sends mail has no install step beyond Python.
 
 ## Setup
 

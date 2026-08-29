@@ -1,0 +1,65 @@
+name: Capture prospect rankings
+
+# Pipeline reworks the org lists in the spring and again after the deadline.
+# These run the morning after each, which is the same pair of dates
+# prospects.py uses to decide a captured list has gone stale.
+on:
+  schedule:
+    - cron: "0 14 1 4 *"
+    - cron: "0 14 1 8 *"
+  workflow_dispatch:
+    inputs:
+      season:
+        description: "Season the rankings belong to (default: this year)"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: capture-rankings
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      # Chromium only. mlb.com serves five prospects to a non-browser client
+      # and the rest only after a click, so this job needs a real browser even
+      # though nothing else in the project does.
+      - run: playwright install --with-deps chromium
+
+      - name: Capture every org's top 30
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.season }}" ]; then
+            ARGS="--season ${{ inputs.season }}"
+          fi
+          ./scripts/capture-rankings $ARGS
+
+      # Opened as a pull request rather than pushed. A ranking list is a
+      # judgement call about who this digest follows, and it is worth a glance
+      # before it starts changing what lands in the inbox.
+      - name: Open a pull request with the new rankings
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: rankings/refresh
+          title: "Refresh the Pipeline prospect rankings"
+          commit-message: "Refresh the Pipeline prospect rankings"
+          body: |
+            Captured from MLB Pipeline by the scheduled job.
+
+            Worth checking the diff for organizations whose list moved more
+            than a ranking update would explain, which usually means the page
+            layout changed rather than the rankings did.
+          add-paths: config/prospect_rankings.json
+          delete-branch: true
