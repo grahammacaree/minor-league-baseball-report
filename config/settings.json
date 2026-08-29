@@ -1,0 +1,28 @@
+{
+  "org": {
+    "team_id": 136,
+    "team_name": "Seattle Mariners",
+    "prospects_url": "https://www.mlb.com/prospects/mariners"
+  },
+  "depth": {
+    "watchlist": 10,
+    "notable": 30
+  },
+  "notable_thresholds": {
+    "hits": 2,
+    "extra_base_hits": 2,
+    "home_runs": 1,
+    "rbi": 3,
+    "stolen_bases": 2,
+    "strikeouts_pitched": 6,
+    "scoreless_innings_relief": 2
+  },
+  "trends": {
+    "min_hit_streak": 5,
+    "rolling_windows_days": [7, 15],
+    "min_rolling_plate_appearances": 15,
+    "min_rolling_ops": 0.9,
+    "max_rolling_ops": 0.55,
+    "min_scoreless_outings": 3
+  }
+}
