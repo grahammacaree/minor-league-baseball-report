@@ -4,7 +4,7 @@ import argparse
 import sys
 from datetime import date, timedelta
 
-from . import config_loader, emailer, fetchers, pipeline, store
+from . import config_loader, diagnostics, emailer, fetchers, pipeline, store
 from . import digest as digest_module
 from . import prospects as prospects_module
 from .config_loader import load_settings
@@ -83,8 +83,12 @@ def main(argv: list[str] | None = None) -> int:
         _fetch(season, settings["org"]["team_id"])
         return 0
 
-    digest = pipeline.build_digest(args.date, season, settings)
+    # Built before anything is printed, so the account of the run survives a
+    # failure in the send and does not have to be reconstructed from a rerun.
+    run = diagnostics.Run()
+    digest = pipeline.build_digest(args.date, season, settings, run=run)
     text = digest_module.render(digest)
+    diagnostics.emit(run, stream=sys.stderr)
 
     if args.dry_run:
         print(text)

@@ -4,6 +4,7 @@ from datetime import date
 
 from . import (
     baselines,
+    diagnostics,
     evaluation,
     fetchers,
     park,
@@ -34,6 +35,7 @@ def _contexts(
     settings: dict,
     promoted: set[int] | None = None,
     changed_org: set[int] | None = None,
+    run: diagnostics.Run | None = None,
 ) -> dict[int, PlayerContext]:
     """
     Season context for every tracked prospect, in league terms.
@@ -65,6 +67,14 @@ def _contexts(
         leagues = {player.league_id for player in pool}
         parks = park.load(sorted(leagues), season)
         league_baselines = baselines.build(pool, group, minimum[group], parks=parks)
+
+        if run is not None:
+            run.record(
+                f"{group} pool", f"{len(pool):,} players, {len(leagues)} leagues"
+            )
+            # Factors are per league, not per group, so once is enough.
+            if group == "hitting":
+                diagnostics.park_coverage(run, sorted(leagues), season)
         # Which league a club plays in, so a former club can be looked up from
         # the shares without another request. Every club is in the pool already,
         # by way of its own players.
@@ -81,6 +91,14 @@ def _contexts(
             )
             baseline = league_baselines.get(current.league_id)
             if baseline is None:
+                # Too few qualified players in the league to rank against, so
+                # the player is left out of the digest entirely. Worth saying:
+                # from the outside it looks the same as not having played.
+                if run is not None:
+                    run.warn(
+                        f"No {group} baseline for league {current.league_id}: "
+                        f"{current.name} has no season line in this digest."
+                    )
                 continue
 
             shares = (
@@ -141,7 +159,12 @@ def _contexts(
     return contexts
 
 
-def build_digest(report_date: date, season: int, settings: dict) -> Digest:
+def build_digest(
+    report_date: date,
+    season: int,
+    settings: dict,
+    run: diagnostics.Run | None = None,
+) -> Digest:
     """
     Refresh the local history, then report on it.
 
@@ -171,7 +194,20 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
 
     levels = fetchers.current_levels(tracked, org_id, season)
     promoted = fetchers.in_majors(levels)
-    store.save(season, fetchers.game_logs(tracked, org_id, season, levels=levels))
+    logs = fetchers.game_logs(tracked, org_id, season, levels=levels)
+    added = store.save(season, logs)
+
+    if run is not None:
+        run.record("report date", f"{report_date} (season {season})")
+        run.record("tracked", f"{len(tracked)} prospects")
+        run.record("game logs", f"{len(logs):,} fetched, {added:,} new")
+        run.record("crossings", f"{len(joined)} in, {len(left)} out")
+        if unresolved := [p.name for p in tracked if not p.player_id]:
+            run.warn(
+                f"No player id for {', '.join(unresolved)}: nothing of theirs "
+                "is fetched or reported."
+            )
+        diagnostics.pitch_coverage(run, statsapi.FULL_SEASON_SPORT_IDS, season)
 
     since, until = fetchers.lookback_window(
         report_date, days=settings["moves_lookback_days"]
@@ -192,25 +228,53 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     today = [log for log in history if log.game_date == report_date]
     whiffs = fetchers.whiffs_for_outings(today)
 
+    contexts = _contexts(
+        tracked,
+        history,
+        report_date,
+        season,
+        settings,
+        promoted=promoted,
+        changed_org=changed_org,
+        run=run,
+    )
+
     digest = digest_module.build(
         report_date=report_date,
         tracked=tracked,
         history=history,
         moves=moves,
         settings=settings,
-        contexts=_contexts(
-            tracked,
-            history,
-            report_date,
-            season,
-            settings,
-            promoted=promoted,
-            changed_org=changed_org,
-        ),
+        contexts=contexts,
         whiffs=whiffs,
         arrivals=recent,
         departures=recently_gone,
     )
+
+    if run is not None:
+        run.record("season lines", f"{len(contexts)} of {len(tracked)} tracked")
+        played = sum(len(lines) for lines in digest.played.values())
+        run.record(
+            "digest",
+            f"{played} played across {len(digest.played)} levels, "
+            f"{len(digest.moves)} moves, {len(digest.arrivals)} in, "
+            f"{len(digest.departures)} out",
+        )
+        # The bars are the part that fails without complaining, so they are
+        # counted rather than assumed: a run where every player is short of
+        # them is a cache that never loaded, not a quiet day.
+        bars = [
+            context.skills.count(evaluation.SKILL_SEPARATOR) + 1
+            if context.skills
+            else 0
+            for context in contexts.values()
+        ]
+        run.record("skill bars", f"{sum(bars)} across {len(bars)} players")
+        if bars and not sum(bars):
+            run.warn(
+                "Not one skill bar was rendered, so every player is being "
+                "reported without any league context at all."
+            )
 
     captured = prospects.captured_on()
     if prospects.refresh_due(captured, as_of=report_date):
