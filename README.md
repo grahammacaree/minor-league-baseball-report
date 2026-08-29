@@ -125,6 +125,12 @@ and the split means adding someone to the digest never touches secrets. In CI th
 values come from environment variables instead, which take precedence over the file.
 Override the config location with `MLB_REPORT_CONFIG_HOME`.
 
+Readers are carried in the SMTP envelope and the message is addressed to the sender, so
+nobody on the list is shown to anybody else on it, and the run logs a count rather than
+the addresses. This repository is public and its workflow logs are readable by anyone;
+[docs/SECURITY.md](docs/SECURITY.md) sets out what that means for the credentials and
+for the reader list.
+
 Nothing is sent on a night when nothing cleared the bar. The minor league season ends in
 September, so the alternative is an empty digest every morning until April. Set
 `send_when_quiet` to `true` in `user.json` if you would rather have the mail regardless.

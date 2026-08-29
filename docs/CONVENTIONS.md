@@ -39,8 +39,8 @@ change almost nothing.
 **The run values are not harmless.** They are calibrated to major-league
 scoring and applied to leagues that score differently, and they are the last
 major-league assumption left in wRC+. Proper linear weights come from run
-expectancy by base-out state, which needs play-by-play — which this project
-now caches. See the priority list below.
+expectancy by base-out state, which needs the play-by-play this project already
+caches. See the priority list below.
 
 **The halving assumes half a player's games are on the road**, which is close
 enough to true that the error is small, but it is a flat assumption applied to

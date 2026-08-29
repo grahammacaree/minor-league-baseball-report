@@ -140,9 +140,9 @@ pooling unharmed, since both halves were inflated equally.
 
 ### Where ground balls and spray come from
 
-Neither side carries a separate profile line. Everything a profile would have
-said is now a bar, and the two would have overlapped: a hitter's ground-ball
-rate is exactly one minus the air rate beside it, so printing both is the same
+Batted-ball tendencies are reported as bars alongside the other skills rather
+than on a line of their own, and each appears once: a hitter's ground-ball rate
+is exactly one minus the air rate beside it, so showing both would be the same
 number told twice and backwards.
 
 Ground-ball rate is taken from play-by-play even though `seasonAdvanced` carries
@@ -223,21 +223,21 @@ Pitchers are ranked on their actual whiff rate rather than strikeout rate for
 the same reason. Both are available per player from `seasonAdvanced`, and they
 correlate +0.78 — close, but not the same skill.
 
-### A correction on the altitude story
+### What altitude does, and does not, explain
 
-An earlier version of this document claimed that thinner air flattens breaking
-balls and therefore suppresses whiffs. **The mechanism is not supported by the
-data.** Altitude correlates −0.58 with the strikeout factor but only −0.31 with
-the whiff factor, and −0.57 with the called-strike factor. Amarillo, the
-highest park in Double-A, is neutral on whiffs.
+Altitude is the obvious candidate for a physical explanation of the strikeout
+factor, and it does correlate with it at −0.58. But the effect runs almost
+entirely through called strikes, at −0.57, and barely through swings and misses
+at −0.31. Amarillo, the highest park in Double-A, is neutral on whiffs.
 
-Whatever altitude does to strikeouts runs mostly through called strikes, not
-swings and misses. Umpire zone behavior and hitter approach in a park that
-rewards contact are both plausible, and neither is tested here.
+The tidy story — thinner air flattens breaking balls, so hitters miss less —
+therefore does not survive the split. Umpire zone behaviour and hitter approach
+in a park that rewards contact are both plausible alternatives, and neither is
+tested here.
 
-Whiff rate is still not park-independent — the spread across parks is 11% —
-which is why it is adjusted. The physical explanation simply does not survive
-contact with the split.
+This does not weaken the case for adjusting whiff rate, which varies across
+parks by 11% whatever the cause. It is a reason to trust the measured factor
+over the mechanism it seems to imply.
 
 ## Age relative to level
 
