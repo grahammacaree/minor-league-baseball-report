@@ -119,11 +119,19 @@ _STYLE = {
         "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;"
         "background:#f5f5f7;padding:1px 5px;border-radius:4px"
     ),
+    # Undecorated, because a name in a heading is already prominent and an
+    # underline under every one of them would be noise.
+    "link": "color:inherit;text-decoration:none",
 }
+
+# A markdown link. The URL is deliberately narrow: no spaces, no closing
+# parenthesis, and a scheme we wrote ourselves.
+_LINK = re.compile(r"\[([^\]]+)\]\((https://[^\s)]+)\)")
 
 
 def _inline_html(text: str) -> str:
     text = _CODE.sub(rf'<code style="{_STYLE["code"]}">\1</code>', text)
+    text = _LINK.sub(rf'<a href="\2" style="{_STYLE["link"]}">\1</a>', text)
     text = _BOLD.sub(r"<strong>\1</strong>", text)
     return re.sub(r"_(.+?)_", rf'<em style="{_STYLE["em"]}">\1</em>', text)
 

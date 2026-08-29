@@ -425,3 +425,60 @@ def test_power_bars_are_absent_when_play_by_play_was_never_gathered():
     assert ranked["Air%"] is None
     assert ranked["Pull%"] is None
     assert ranked["Contact%"] is not None
+
+
+def league(name: str, **overrides) -> LeagueBaseline:
+    base = baselines.LeagueBaseline(
+        league_id=abs(hash(name)) % 1000,
+        league_name=name,
+        group="hitting",
+        runs_per_pa=0.12,
+        raa_per_pa=0.0,
+        woba_scale=1.2,
+        league_woba=0.320,
+        average_age=23.0,
+    )
+    for key, value in overrides.items():
+        setattr(base, key, value)
+    return base
+
+
+def test_a_blended_baseline_names_both_leagues():
+    """The reader is being told what the percentiles beneath were measured on."""
+    blended = baselines.blend([(league("SOU"), 97.0), (league("TEX"), 89.0)])
+    assert blended.league_name == "SOU/TEX"
+
+
+def test_blended_constants_lean_toward_the_longer_stint():
+    blended = baselines.blend(
+        [
+            (league("SOU", runs_per_pa=0.10), 90.0),
+            (league("TEX", runs_per_pa=0.20), 10.0),
+        ]
+    )
+    assert blended.runs_per_pa == pytest.approx(0.11)
+
+
+def test_a_blended_rank_is_the_ranks_in_each_league_weighted():
+    easy = league("SOU", distributions={"power": [float(n) for n in range(100)]})
+    hard = league("TEX", distributions={"power": [float(n) for n in range(50, 150)]})
+    blended = baselines.blend([(easy, 50.0), (hard, 50.0)])
+    # 60 is the 60th percentile of one league and the 10th of the other.
+    assert blended.percentile("power", 60.0) == 35
+
+
+def test_a_league_too_small_to_rank_is_left_out_of_the_blend():
+    ranked = league("SOU", distributions={"power": [float(n) for n in range(100)]})
+    tiny = league("TEX", distributions={"power": [1.0, 2.0]})
+    blended = baselines.blend([(ranked, 50.0), (tiny, 50.0)])
+    assert blended.percentile("power", 60.0) == 60
+
+
+def test_one_stint_needs_no_blending():
+    only = league("TEX")
+    assert baselines.blend([(only, 200.0)]) is only
+
+
+def test_a_club_with_no_playing_time_does_not_drag_the_blend():
+    played = league("SOU", runs_per_pa=0.10)
+    assert baselines.blend([(played, 100.0), (league("TEX"), 0.0)]) is played

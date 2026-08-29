@@ -239,8 +239,38 @@ would hide it. League average age is computed from the same qualified pool.
 A player who changes level mid-season gets one leaderboard row per stint. The
 level of his most recent game decides which is current, because someone
 promoted in August may still have most of his season's plate appearances below.
-The previous stint is reported underneath, since the change is usually the most
+Every level he has left is reported underneath, largest sample first: the stint
+behind him is often the better evidence, and the change is usually the most
 interesting thing about the line.
+
+Stints are named by club as well as level, because the level alone stops
+identifying one as soon as a player is traded without moving up.
+
+### A trade within a level
+
+This is the awkward case. A player traded from one Double-A club to another has
+his line pooled by the leaderboards into a single row credited to whichever
+club he finished with, and the two halves cannot be separated: the play-by-play
+counts behind the skill bars are gathered per level, not per club.
+
+So the line is left whole and the yardstick is blended instead. His parks are
+averaged by how much of the season each accounts for, geometrically, since
+these are multipliers. His leagues are averaged the same way: the constants
+behind wRC+ and FIP- are averaged directly, and his percentile is computed in
+each league he played in and those ranks averaged. That last part is the
+faithful reading — it says he was in the sixtieth percentile of one league for
+half a season and the seventieth of the other for the rest, which is what
+happened.
+
+Both leagues are named where the league normally is, so a header reading
+`SOU/TEX` is the signal that the comparison beneath it is a mixture. Boston
+Smith in 2026 is the worked example: 97 plate appearances at Birmingham in the
+Southern League and 89 at Arkansas in the Texas League, worth 197 wRC+ measured
+against one, 202 against the other, and 200 blended.
+
+The splits are fetched per player, so only players known to have changed
+organization this season are asked about — one request each, and none at all in
+the ordinary year.
 
 ## Park factors
 

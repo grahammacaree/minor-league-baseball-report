@@ -331,7 +331,10 @@ def test_an_arrival_is_reported_by_where_he_was_ranked():
         settings=SETTINGS,
         arrivals=acquired(),
     )
-    assert digest.arrivals == ["**C Boston Smith** — CWS No. 4, acquired 30 July"]
+    assert digest.arrivals == [
+        "**C [Boston Smith](https://www.mlb.com/player/695722)** — "
+        "CWS No. 4, acquired 30 July"
+    ]
     assert "## New in the system" in digest_module.render(digest)
 
 
@@ -350,3 +353,13 @@ def test_a_new_prospect_is_reason_enough_to_send():
 def test_the_arrivals_heading_is_absent_on_a_day_without_one():
     """An empty heading every day trains the reader to skip it."""
     assert "New in the system" not in digest_module.render(build())
+
+
+def test_a_player_is_linked_to_his_page():
+    output = digest_module.render(build([hitting(2)]))
+    assert "[Lazaro Montes](https://www.mlb.com/player/2)" in output
+
+
+def test_a_player_without_an_id_is_named_but_not_linked():
+    """An unassigned draftee has no page, and a guessed link is worse than none."""
+    assert digest_module._named("RHP", "Nobody Yet", None) == "RHP Nobody Yet"
