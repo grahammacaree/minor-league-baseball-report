@@ -12,7 +12,7 @@ The contents of your `user.json` — the recipient list. Paste the file verbatim
   "recipients": [
     { "name": "Graham MacAree", "email": "hi@grahammacaree.com" }
   ],
-  "send_when_quiet": true
+  "send_when_quiet": false
 }
 ```
 
@@ -21,7 +21,14 @@ paste fails immediately with a clear error rather than midway through a send.
 
 ## `MLB_REPORT_USER_ENV`
 
-The contents of your `.env` — SMTP credentials only:
+The contents of your `.env`. **SMTP credentials only** — this is the one thing
+worth being careful about here.
+
+The file is uploaded verbatim into this repository's CI, so anything else living
+in it goes too. If you keep one shared `.env` for several projects, or symlink
+this one at another project's, then an unrelated API key ends up readable by
+every workflow in this repository. Give this project its own file with these
+five keys and nothing else:
 
 ```
 SMTP_HOST=smtp.porkbun.com
@@ -33,10 +40,19 @@ MAIL_FROM=mlb-report@yourdomain.com
 
 ## Setting them
 
+Both are set from your machine, since neither the repository nor a workflow can
+create its own secrets.
+
 ```bash
+# Check what is actually in the env file before it leaves your laptop.
+cut -d= -f1 ~/.config/mlb-report/.env
+
 gh secret set MLB_REPORT_USER_JSON < ~/.config/mlb-report/user.json
 gh secret set MLB_REPORT_USER_ENV < ~/.config/mlb-report/.env
 ```
+
+Rotating an SMTP password means setting the secret again; nothing reads through
+to your local file.
 
 ## Schedule
 
