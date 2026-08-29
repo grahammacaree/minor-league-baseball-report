@@ -4,7 +4,7 @@ from datetime import date
 
 from . import baselines, evaluation, fetchers, park, prospects, statsapi, store
 from . import digest as digest_module
-from .digest import Digest, PlayerContext
+from .digest import MAJORS, Digest, PlayerContext
 
 
 def _latest_levels(history: list) -> dict[int, str]:
@@ -23,6 +23,7 @@ def _contexts(
     report_date: date,
     season: int,
     settings: dict,
+    promoted: set[int] | None = None,
 ) -> dict[int, PlayerContext]:
     """
     Season context for every tracked prospect, in league terms.
@@ -32,9 +33,13 @@ def _contexts(
     one leaderboard row per stint, so the current level is reported and the
     previous one kept as context — a promotion is exactly the thing worth
     seeing.
+
+    The majors are left out of the pool entirely. A promoted player's season
+    then reads as the last thing he did in the minors, and his age no longer
+    gets measured against a major league average he is obviously young for.
     """
     tracked_ids = {p.player_id for p in tracked if p.player_id}
-    sport_ids = statsapi.AFFILIATE_SPORT_IDS + (fetchers.MLB_SPORT_ID,)
+    sport_ids = statsapi.AFFILIATE_SPORT_IDS
     minimum = settings["minimum_sample"]
     current_level = _latest_levels(history)
 
@@ -87,6 +92,7 @@ def _contexts(
                 skills=evaluation.render_skills(result),
                 profile=evaluation.render_profile(result),
                 prior=prior,
+                promoted=player_id in (promoted or set()),
             )
     return contexts
 
@@ -101,13 +107,19 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     org_id = settings["org"]["team_id"]
     tracked = prospects.tracked_prospects(season)
 
-    store.save(season, fetchers.game_logs(tracked, org_id, season))
+    levels = fetchers.current_levels(tracked, org_id, season)
+    promoted = fetchers.in_majors(levels)
+    store.save(season, fetchers.game_logs(tracked, org_id, season, levels=levels))
 
     since, until = fetchers.lookback_window(
         report_date, days=settings["moves_lookback_days"]
     )
     moves = fetchers.transactions(tracked, org_id, season, since, until)
-    history = store.load(season)
+    # Major league games are dropped on the way out of the store as well as on
+    # the way in, since a player promoted before this rule existed already has
+    # them on disk. Everything downstream -- the day's line, streaks, notable
+    # performances, which level is current -- then sees only the minors.
+    history = [log for log in store.load(season) if log.level != MAJORS]
 
     digest = digest_module.build(
         report_date=report_date,
@@ -115,7 +127,9 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
         history=history,
         moves=moves,
         settings=settings,
-        contexts=_contexts(tracked, history, report_date, season, settings),
+        contexts=_contexts(
+            tracked, history, report_date, season, settings, promoted=promoted
+        ),
     )
 
     captured = prospects.captured_on()

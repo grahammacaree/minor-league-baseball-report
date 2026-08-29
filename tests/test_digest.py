@@ -185,3 +185,38 @@ def test_render_notes_empty_sections_rather_than_dropping_them():
     output = digest_module.render(build())
     assert "_No roster moves._" in output
     assert "Friday 28 August 2026" in output
+
+
+def test_a_promoted_player_shows_the_note_not_his_day():
+    """His major league games are on television; the digest stays in the minors."""
+    digest = digest_module.build(
+        report_date=REPORT_DATE,
+        tracked=TOP_FOUR,
+        history=[hitting(2)],
+        moves=[],
+        settings=SETTINGS,
+        contexts={
+            2: digest_module.PlayerContext(
+                production="AAA (PCL): 119 wRC+ in 194 PA", promoted=True
+            )
+        },
+    )
+    entry = next(line for line in digest.watchlist if "Lazaro Montes" in line)
+    assert "promoted to MLB" in entry
+    assert "2-4, HR" not in entry
+    # The season still reads as the last thing he did in the minors.
+    assert "AAA (PCL): 119 wRC+ in 194 PA" in entry
+
+
+def test_a_player_still_in_the_minors_shows_his_day():
+    digest = digest_module.build(
+        report_date=REPORT_DATE,
+        tracked=TOP_FOUR,
+        history=[hitting(2)],
+        moves=[],
+        settings=SETTINGS,
+        contexts={2: digest_module.PlayerContext(promoted=False)},
+    )
+    entry = next(line for line in digest.watchlist if "Lazaro Montes" in line)
+    assert "promoted to MLB" not in entry
+    assert "2-4, HR" in entry

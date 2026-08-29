@@ -8,6 +8,10 @@ from . import trends
 from .models import GameLog, Transaction
 from .prospects import Prospect
 
+# The level abbreviation the API uses for the majors, and the one level this
+# digest deliberately says nothing about.
+MAJORS = "MLB"
+
 
 @dataclass(frozen=True)
 class PlayerContext:
@@ -18,6 +22,7 @@ class PlayerContext:
     skills: str | None = None
     profile: str | None = None
     prior: str | None = None
+    promoted: bool = False
 
 
 @dataclass
@@ -76,7 +81,10 @@ def _describe(
     header += f", {context.age}" if context and context.age else ""
     header += ")"
 
-    if logs:
+    if context and context.promoted:
+        # Nothing about his day belongs here: those games are on television.
+        body = [f"{header} — promoted to {MAJORS}"]
+    elif logs:
         lines = [f"{game_line(log)} — {log.level} vs {log.opponent}" for log in logs]
         body = [f"{header} — {'; '.join(lines)}"]
     else:

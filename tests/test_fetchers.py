@@ -166,3 +166,33 @@ def test_innings_pitched_thirds_convert_to_real_numbers():
         stat={"inningsPitched": "5.2"},
     )
     assert log.innings_pitched == pytest.approx(5 + 2 / 3)
+
+
+def test_a_player_in_the_majors_is_not_fetched(api):
+    """
+    His games are on television. Fetching them would put major league lines in
+    the store, where they would surface as the day's line and feed streaks.
+    """
+    api.people_payload = [{"id": 703155, "currentTeam": {"id": ORG}}]
+
+    logs = fetchers.game_logs([Prospect(1, "Promoted", "LHP", 703155)], ORG, 2026)
+
+    assert api.game_log_calls == []
+    assert logs == []
+
+
+def test_the_majors_are_reported_as_a_promotion(api):
+    """The parent club's own id maps to the majors, not to an affiliate level."""
+    api.people_payload = [
+        {"id": 703155, "currentTeam": {"id": ORG}},
+        {"id": 815549, "currentTeam": {"id": 619}},
+    ]
+    levels = fetchers.current_levels(
+        [
+            Prospect(1, "Promoted", "LHP", 703155),
+            Prospect(2, "Still Down", "OF", 815549),
+        ],
+        ORG,
+        2026,
+    )
+    assert fetchers.in_majors(levels) == {703155}

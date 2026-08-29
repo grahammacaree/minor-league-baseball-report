@@ -37,17 +37,34 @@ def current_levels(prospects: list[Prospect], parent_org_id: int, season: int) -
     return levels
 
 
+def in_majors(levels: dict[int, int]) -> set[int]:
+    """Tracked players currently on the big league roster."""
+    return {
+        player_id for player_id, sport_id in levels.items() if sport_id == MLB_SPORT_ID
+    }
+
+
 def game_logs(
     prospects: list[Prospect],
     parent_org_id: int,
     season: int,
+    levels: dict[int, int] | None = None,
 ) -> list[GameLog]:
-    """Fetch every tracked prospect's log at their current level."""
-    levels = current_levels(prospects, parent_org_id, season)
+    """
+    Fetch every tracked prospect's log at their current level, majors excluded.
+
+    A prospect who reaches Seattle stops being something this digest can tell
+    you anything useful about — those games are on television. His minor league
+    season stays as the last thing worth reporting.
+    """
+    if levels is None:
+        levels = current_levels(prospects, parent_org_id, season)
     logs: list[GameLog] = []
     for prospect in prospects:
         sport_id = levels.get(prospect.player_id)
         if prospect.player_id is None or sport_id is None:
+            continue
+        if sport_id == MLB_SPORT_ID:
             continue
         group = "pitching" if prospect.is_pitcher else "hitting"
         splits = statsapi.game_log(prospect.player_id, group, season, sport_id)
