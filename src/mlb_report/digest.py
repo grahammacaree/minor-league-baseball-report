@@ -9,6 +9,16 @@ from .models import GameLog, Transaction
 from .prospects import Prospect
 
 
+@dataclass(frozen=True)
+class PlayerContext:
+    """A prospect's season, already rendered for display."""
+
+    age: str | None = None
+    production: str | None = None
+    skills: str | None = None
+    prior: str | None = None
+
+
 @dataclass
 class Digest:
     report_date: date
@@ -50,13 +60,35 @@ def game_line(log: GameLog) -> str:
     return _pitching_line(log) if log.is_pitching else _hitting_line(log)
 
 
-def _describe(prospect: Prospect, logs: list[GameLog]) -> str:
-    """One prospect's day, including the games they didn't play."""
-    header = f"**{prospect.rank}. {prospect.name}** ({prospect.position})"
-    if not logs:
-        return f"{header} — did not play"
-    lines = [f"{game_line(log)} — {log.level} vs {log.opponent}" for log in logs]
-    return f"{header} — {'; '.join(lines)}"
+def _describe(
+    prospect: Prospect,
+    logs: list[GameLog],
+    context: PlayerContext | None,
+) -> str:
+    """
+    One prospect's day, then the season it sits inside.
+
+    The daily line on its own is noise; it only means something next to what
+    the player has been doing all year and how that rates in his league.
+    """
+    header = f"**{prospect.rank}. {prospect.name}** ({prospect.position}"
+    header += f", {context.age}" if context and context.age else ""
+    header += ")"
+
+    if logs:
+        lines = [f"{game_line(log)} — {log.level} vs {log.opponent}" for log in logs]
+        body = [f"{header} — {'; '.join(lines)}"]
+    else:
+        body = [f"{header} — did not play"]
+
+    if context:
+        if context.production:
+            body.append(f"  Season at {context.production}")
+        if context.skills:
+            body.append(f"  {context.skills}")
+        if context.prior:
+            body.append(f"  {context.prior}")
+    return "\n".join(body)
 
 
 def _is_notable(log: GameLog, thresholds: dict) -> bool:
@@ -82,8 +114,10 @@ def build(
     history: list[GameLog],
     moves: list[Transaction],
     settings: dict,
+    contexts: dict[int, PlayerContext] | None = None,
 ) -> Digest:
     digest = Digest(report_date=report_date)
+    contexts = contexts or {}
     logs_by_player = _by_player(history)
     today_by_player = {
         player_id: [log for log in logs if log.game_date == report_date]
@@ -96,7 +130,9 @@ def build(
     for prospect in tracked:
         today = today_by_player.get(prospect.player_id, [])
         if prospect.rank <= watchlist_depth:
-            digest.watchlist.append(_describe(prospect, today))
+            digest.watchlist.append(
+                _describe(prospect, today, contexts.get(prospect.player_id))
+            )
             continue
         for log in today:
             if _is_notable(log, thresholds):

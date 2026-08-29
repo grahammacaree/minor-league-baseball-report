@@ -89,6 +89,38 @@ def game_log(player_id: int, group: str, season: int, sport_id: int) -> list[dic
     return [split for block in payload.get("stats", []) for split in block["splits"]]
 
 
+def stats_leaderboard(
+    stats: str, group: str, sport_id: int, season: int, page_size: int = 1000
+) -> list[dict]:
+    """
+    Every player at a level, paged until exhausted.
+
+    The whole pool is wanted rather than the qualified leaders, because these
+    rows serve double duty: they carry the tracked prospects' own season lines
+    and the distribution those lines are ranked against.
+    """
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        payload = get(
+            "stats",
+            stats=stats,
+            group=group,
+            sportId=sport_id,
+            season=season,
+            playerPool="All",
+            limit=page_size,
+            offset=offset,
+        )
+        page = [
+            split for block in payload.get("stats", []) for split in block["splits"]
+        ]
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+
+
 def transactions(team_id: int, start_date: str, end_date: str) -> list[dict]:
     payload = get(
         "transactions", teamId=team_id, startDate=start_date, endDate=end_date
