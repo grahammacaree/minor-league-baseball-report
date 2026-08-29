@@ -38,6 +38,7 @@ class Evaluation:
     production_label: str
     slash: str | None
     skills: list[Skill]
+    profile: list[Skill]
     is_pitcher: bool
 
     @property
@@ -76,6 +77,21 @@ HEADLINE_SKILLS = {
     "pitching": ("contact_suppression", "damage_limitation", "command"),
 }
 
+# Reported as rates with a rank beside them rather than as grades, and kept off
+# the headline line, because neither has a good end.
+PROFILE_LABELS = {
+    "ground_ball": "grounders",
+    "pull": "pulled",
+}
+
+# A pitcher's grounder rate is already a headline skill, where it does have a
+# good end: keeping it out of his profile line stops the same number appearing
+# twice in two different framings.
+PROFILE_SKILLS = {
+    "hitting": ("ground_ball", "pull"),
+    "pitching": ("pull",),
+}
+
 
 def evaluate(
     player: PlayerSeason,
@@ -94,20 +110,31 @@ def evaluate(
         else events.plate_appearances
     )
 
-    skills = []
+    def rank(name: str, metric) -> Skill:
+        value = metric(player.stat)
+        # Adjusted with the same factor the league distribution was built
+        # from, or the comparison is between different things.
+        if park_components is not None:
+            value = baselines.park_adjust(value, name, park_components)
+        percentile = baseline.percentile(name, value)
+        if percentile is not None and name in INVERTED_METRICS:
+            percentile = 100 - percentile
+        return Skill(name, percentile, value)
+
+    skills: list[Skill] = []
+    profile: list[Skill] = []
     if sample >= minimum_sample:
         # Below the sample floor a percentile is noise dressed up as insight,
         # so no skill line is produced at all.
         for name in HEADLINE_SKILLS[player.group]:
-            value = metrics[name](player.stat)
-            # Adjusted with the same factor the league distribution was built
-            # from, or the comparison is between different things.
-            if park_components is not None:
-                value = baselines.park_adjust(value, name, park_components)
-            percentile = baseline.percentile(name, value)
-            if percentile is not None and name in INVERTED_METRICS:
-                percentile = 100 - percentile
-            skills.append(Skill(SKILL_LABELS[name], percentile, value))
+            ranked = rank(name, metrics[name])
+            skills.append(Skill(SKILL_LABELS[name], ranked.percentile, ranked.value))
+        for name in PROFILE_SKILLS[player.group]:
+            ranked = rank(name, baselines.PROFILE_METRICS[name])
+            if ranked.value is not None:
+                profile.append(
+                    Skill(PROFILE_LABELS[name], ranked.percentile, ranked.value)
+                )
     else:
         return Evaluation(
             player_id=player.player_id,
@@ -118,6 +145,7 @@ def evaluate(
             production_label="FIP-" if is_pitcher else "wRC+",
             slash=None,
             skills=skills,
+            profile=profile,
             is_pitcher=is_pitcher,
         )
 
@@ -140,6 +168,7 @@ def evaluate(
         production_label="FIP-" if is_pitcher else "wRC+",
         slash=slash,
         skills=skills,
+        profile=profile,
         is_pitcher=is_pitcher,
     )
 
@@ -205,6 +234,25 @@ def render_skills(evaluation: Evaluation) -> str | None:
         for skill in evaluation.skills
         if skill.percentile is not None
     ]
+    return " · ".join(parts) if parts else None
+
+
+def render_profile(evaluation: Evaluation) -> str | None:
+    """
+    Batted-ball shape, as rates with the league rank beside them.
+
+    The rate leads and the rank follows, because unlike the skills these are
+    read for what they say about a player's approach rather than for how high
+    they are.
+    """
+    parts = []
+    for entry in evaluation.profile:
+        if entry.value is None:
+            continue
+        share = f"{entry.value * 100:.0f}% {entry.name}"
+        if entry.percentile is not None:
+            share += f" ({_ordinal(entry.percentile)})"
+        parts.append(share)
     return " · ".join(parts) if parts else None
 
 

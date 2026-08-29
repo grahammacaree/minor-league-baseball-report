@@ -13,7 +13,7 @@ import json
 import sys
 from datetime import date
 
-from . import park_builder, statsapi
+from . import park_builder, pitch_data, statsapi
 from .config_loader import bundled_config_dir
 
 
@@ -46,6 +46,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="recompute seasons already on disk",
     )
+    parser.add_argument(
+        "--skip-pitch",
+        action="store_true",
+        help=(
+            "skip the play-by-play pass, leaving whiff and called-strike "
+            "factors out. One request per game, so it is the slow part."
+        ),
+    )
     return parser
 
 
@@ -65,6 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     for sport_id in args.sports:
         print(f"sport {sport_id}: fetching {args.season}...")
         try:
+            # Play-by-play first: it is cached per game and resumable, and the
+            # builder reads whatever has been gathered.
+            if not args.skip_pitch:
+                pitch_data.gather(sport_id, args.season)
             by_league = park_builder.build(sport_id, args.season)
         except statsapi.StatsApiError as error:
             print(f"  skipped: {error}", file=sys.stderr)

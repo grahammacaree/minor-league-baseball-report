@@ -27,6 +27,10 @@ def player(level="AA", league_id=109, group="hitting", **stat):
         "flyOuts": 40,
         "groundHits": 30,
         "groundOuts": 60,
+        "battedBalls": 250,
+        "groundBalls": 100,
+        "sprayedBalls": 240,
+        "pulledBalls": 96,
         "age": 21,
     }
     base.update(stat)
@@ -61,6 +65,8 @@ def baseline(**overrides):
             "contact_suppression": values,
             "damage_limitation": values,
             "command": values,
+            "ground_ball": values,
+            "pull": values,
         },
     )
     for key, value in overrides.items():
@@ -151,14 +157,35 @@ def test_production_line_names_the_level_and_league():
 
 
 def test_park_adjustment_divides_out_the_component_at_half_strength():
-    walks = evaluation.baselines.park_adjust(0.10, "discipline", {"walks": 1.20})
-    assert walks == pytest.approx(0.10 / 1.10)
+    power = evaluation.baselines.park_adjust(0.200, "power", {"extra_base_hits": 1.20})
+    assert power == pytest.approx(0.200 / 1.10)
 
 
-def test_contact_is_inverted_against_the_strikeout_factor():
-    """A park that inflates strikeouts deflates contact, so the factor flips."""
-    adjusted = evaluation.baselines.park_adjust(0.75, "contact", {"strikeouts": 1.20})
+def test_contact_is_measured_against_whiffs_not_strikeouts():
+    """
+    Strikeouts bundle whiffs with called strikes, and parks move the two
+    independently, so a bat-to-ball rate is adjusted by the whiff factor alone.
+    """
+    adjusted = evaluation.baselines.park_adjust(0.75, "contact", {"whiffs": 1.20})
     assert adjusted > 0.75
+    # The strikeout factor must not leak into it.
+    assert (
+        evaluation.baselines.park_adjust(0.75, "contact", {"strikeouts": 1.20}) == 0.75
+    )
+
+
+def test_walk_rates_are_measured_against_the_walk_factor():
+    """
+    The called-strike factor describes the mechanism but tracks the park's
+    actual walk effect only weakly, so the direct measurement is used.
+    """
+    assert evaluation.baselines.park_adjust(
+        0.10, "discipline", {"walks": 1.20}
+    ) == pytest.approx(0.10 / 1.10)
+    assert (
+        evaluation.baselines.park_adjust(0.10, "command", {"called_strikes": 0.50})
+        == 0.10
+    )
 
 
 def test_a_neutral_park_changes_nothing():
@@ -198,7 +225,7 @@ def test_the_player_and_the_league_are_adjusted_the_same_way():
             self.factor = factor
 
         def for_team(self, team_id):
-            return {"walks": self.factor, "strikeouts": 1.0}
+            return {"walks": self.factor, "whiffs": 1.0}
 
     subject = neutral_pool[30]
     results = []
@@ -221,3 +248,33 @@ def test_ordinals_read_naturally():
     assert evaluation._ordinal(3) == "3rd"
     assert evaluation._ordinal(11) == "11th"
     assert evaluation._ordinal(21) == "21st"
+
+
+def test_batted_ball_profile_reports_the_rate_with_its_rank():
+    """The rate leads and the rank only places it, since neither has a good end."""
+    result = evaluation.evaluate(player(), baseline(), minimum_sample=50)
+    rendered = evaluation.render_profile(result)
+
+    assert "40% grounders" in rendered
+    assert "40% pulled" in rendered
+    assert "(39th)" in rendered
+
+
+def test_a_pitcher_does_not_report_grounders_twice():
+    """It is already a headline skill for him, where it does have a good end."""
+    result = evaluation.evaluate(
+        player(group="pitching", battersFaced=400),
+        baseline(group="pitching"),
+        minimum_sample=50,
+    )
+    assert [entry.name for entry in result.profile] == ["pulled"]
+
+
+def test_profile_is_absent_when_play_by_play_was_never_gathered():
+    """A season without a pass reports nothing rather than a zero rate."""
+    thin = player()
+    for key in ("battedBalls", "groundBalls", "sprayedBalls", "pulledBalls"):
+        del thin.stat[key]
+
+    result = evaluation.evaluate(thin, baseline(), minimum_sample=50)
+    assert evaluation.render_profile(result) is None

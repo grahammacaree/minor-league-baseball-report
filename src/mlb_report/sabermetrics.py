@@ -198,6 +198,19 @@ def contact_rate(stat: dict) -> float | None:
     return 1 - _n(stat, "swingAndMisses") / swings
 
 
+def whiff_rate(stat: dict) -> float | None:
+    """
+    Share of swings missed, the pitcher's side of the same event.
+
+    Reported rather than strikeout rate because a strikeout also depends on
+    called strikes, which parks affect independently of swings and misses.
+    """
+    swings = _n(stat, "totalSwings")
+    if swings <= 0:
+        return None
+    return _n(stat, "swingAndMisses") / swings
+
+
 def _opportunities(stat: dict) -> float:
     """
     Plate appearances for a hitter, batters faced for a pitcher.
@@ -249,10 +262,32 @@ def solid_contact_rate(stat: dict) -> float | None:
 
 
 def ground_ball_rate(stat: dict) -> float | None:
-    in_play = _n(stat, "ballsInPlay")
-    if in_play <= 0:
+    """
+    Ground balls as a share of batted balls, from play-by-play.
+
+    The season feed carries its own ground-ball counts, hits included, and they
+    are self-consistent. Play-by-play is preferred anyway so that one
+    definition of a ground ball runs through the whole calculation: the park
+    factor this rate is divided by is built from play-by-play trajectories, and
+    a rate measured one way cannot be adjusted by a factor measured another.
+    """
+    batted = _n(stat, "battedBalls")
+    if batted <= 0:
         return None
-    return (_n(stat, "groundHits") + _n(stat, "groundOuts")) / in_play
+    return _n(stat, "groundBalls") / batted
+
+
+def pull_rate(stat: dict) -> float | None:
+    """
+    Batted balls hit to the pull side, as a share of those with a location.
+
+    The counts come from play-by-play rather than the season feed, which has no
+    spray fields, and are absent for any player or season not gathered.
+    """
+    placed = _n(stat, "sprayedBalls")
+    if placed <= 0:
+        return None
+    return _n(stat, "pulledBalls") / placed
 
 
 def home_runs_per_nine(stat: dict) -> float | None:

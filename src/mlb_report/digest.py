@@ -16,6 +16,7 @@ class PlayerContext:
     age: str | None = None
     production: str | None = None
     skills: str | None = None
+    profile: str | None = None
     prior: str | None = None
 
 
@@ -86,6 +87,8 @@ def _describe(
             body.append(f"  Season at {context.production}")
         if context.skills:
             body.append(f"  {context.skills}")
+        if context.profile:
+            body.append(f"  {context.profile}")
         if context.prior:
             body.append(f"  {context.prior}")
     return "\n".join(body)

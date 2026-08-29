@@ -15,6 +15,11 @@ What the API does provide, via `stats=seasonAdvanced` (verified populated for
 every affiliate level): swings, swinging strikes, balls in play, and hits and
 outs broken out by trajectory (line, fly, ground, pop).
 
+Play-by-play adds two things the season feed has no equivalent for: the split of
+a strikeout into whiffs and called strikes, and where a batted ball landed. It
+costs one request per game, so it is gathered offline rather than in the daily
+run.
+
 ## League context
 
 Baselines are computed per **league**, not per level. Double-A is not one run
@@ -71,11 +76,43 @@ means the same thing at every level.
 
 | Skill | Hitters | Pitchers |
 |-------|---------|----------|
-| Contact | swings that make contact | strikeout rate |
+| Contact | swings that make contact | whiff rate |
 | Power / damage | isolated power | ground-ball rate |
 | Discipline / command | walk rate | walk rate, inverted |
 
 Walk rate is inverted for pitchers, so a low rate ranks high.
+
+### Batted-ball profile
+
+Two further rates are reported for hitters and pitchers alike, on their own line
+and deliberately not folded into the skills above or into each other:
+
+| Rate | Denominator | Source |
+|------|-------------|--------|
+| Ground balls | batted balls | play-by-play trajectory |
+| Pull | batted balls with a landing spot | play-by-play coordinates |
+
+Neither is graded, because neither has a good end. A high ground-ball rate is a
+virtue in a sinkerballer and a warning sign in a hitter with power; pull rate
+describes an approach rather than ranking it. Both are shown as the rate itself
+with the league percentile in parentheses, so the number leads and the rank only
+places it.
+
+Ground-ball rate is taken from play-by-play even though `seasonAdvanced` carries
+its own ground-ball counts, hits included, which sum exactly to `ballsInPlay`
+for 1,484 of 1,504 hitters checked. The reason is consistency rather than
+correctness: the ground-ball park factor these rates are divided by is built
+from play-by-play trajectories, and a rate measured one way cannot be adjusted
+by a factor measured another.
+
+Pull rate has no season-stat equivalent at any level. Spray direction is
+computed from the batted ball's landing coordinates as an angle off home plate,
+with the middle 30 degrees counted as centre and the rest split by the batter's
+handedness — the same ball down the left-field line is pulled by a right-hander
+and served the other way by a left-hander. The coordinate frame was checked
+against the fielder credited with each ball: third base averages −29 degrees,
+centre field +2, first base +41, which is the field in order. Roughly 100% of
+batted balls carry a usable location.
 
 Percentiles appear only once a player clears the sample floor in
 `config/settings.json` (50 plate appearances or batters faced). Below that a
@@ -83,10 +120,10 @@ percentile is noise presented as insight, so no skill line is produced at all.
 
 ### Park adjustment, and the trap in it
 
-Skills are park-adjusted, each against the component it belongs to — contact
-and whiffs against the strikeout factor, power against extra-base hits,
-discipline and command against walks. Contact is inverted first, since a park
-that inflates strikeouts deflates contact.
+Skills are park-adjusted, each against the component it belongs to — contact and
+whiffs against the whiff factor, power against extra-base hits, discipline and
+command against walks, ground balls and pull against their own factors. Contact
+is inverted first, since a park that inflates whiffs deflates contact.
 
 **The entire league pool is re-ranked on adjusted values.** Adjusting one
 player and looking him up in an unadjusted distribution would double-count,
@@ -102,27 +139,56 @@ outlier has nobody to trade places with. A 40.5% strikeout rate is the 99th
 percentile in the Texas League before and after adjustment, even though
 Dickey-Stephens inflates strikeouts.
 
-### Whiff rate is not park-independent
+### Why bat-to-ball skill is adjusted by whiffs, not strikeouts
 
-Contact and whiff rates are adjusted rather than treated as clean skill
-measures, because parks visibly move them. Altitude predicts the strikeout
-factor in two independent leagues:
+A strikeout is two different park effects wearing one number, and across parks
+they are **unrelated to each other**: the whiff factor and the called-strike
+factor correlate +0.04. Spread across Double-A parks in 2025:
 
-| League (2025) | correlation(altitude, K factor) | parks |
-|---|---|---|
-| Triple-A | −0.66 | 10 |
-| Double-A | −0.64 | 10 |
+| factor | spread (max − min) |
+|---|---|
+| strikeout | 0.163 |
+| whiff | 0.113 |
+| called strike | 0.057 |
 
-Thinner air flattens breaking balls, so high-altitude parks suppress
-strikeouts: El Paso at 3,740 feet sits at 0.921 and Reno at 0.937, against
-Sacramento at sea level at 1.100. Variation altitude cannot explain — Corpus
-Christi is 30 feet up at 1.055 — is consistent with backdrop and sightline
-effects.
+Adjusting a contact rate by the strikeout factor therefore over-corrects by
+roughly 44%, importing zone variation into a bat-to-ball measure. Amarillo is
+the clearest case: it suppresses strikeouts 6.7% while being neutral on whiffs
+(0.991), so a strikeout-based adjustment would credit a hitter there for
+beating a park that never challenged his contact.
 
-The honest limitation: what is measured is **strikeouts**, which bundle
-swinging strikes with called strikes and hitter approach. Game logs carry no
-swing data, so a true swinging-strike factor would need play-by-play from the
-game feed, roughly 1,800 games per league-season.
+So contact and whiff percentiles are adjusted by the whiff factor. Every rate is
+adjusted by the park's measured effect on that same rate rather than on a proxy
+for it.
+
+That principle also decided what *not* to do with the called-strike factor.
+Adjusting walk rates by it is tempting, since a generous zone should mean fewer
+walks, and the correlation does run in that direction — but weakly and
+inconsistently: −0.08 in Triple-A, −0.37 in High-A, −0.33 in Single-A. The walk
+factor measures the park's effect on walks directly, so substituting a weak
+correlate for it would trade signal for noise. The called-strike factor is
+computed and stored, because it is what explains the gap between strikeouts and
+whiffs, but it adjusts nothing on its own.
+
+Pitchers are ranked on their actual whiff rate rather than strikeout rate for
+the same reason. Both are available per player from `seasonAdvanced`, and they
+correlate +0.78 — close, but not the same skill.
+
+### A correction on the altitude story
+
+An earlier version of this document claimed that thinner air flattens breaking
+balls and therefore suppresses whiffs. **The mechanism is not supported by the
+data.** Altitude correlates −0.58 with the strikeout factor but only −0.31 with
+the whiff factor, and −0.57 with the called-strike factor. Amarillo, the
+highest park in Double-A, is neutral on whiffs.
+
+Whatever altitude does to strikeouts runs mostly through called strikes, not
+swings and misses. Umpire zone behavior and hitter approach in a park that
+rewards contact are both plausible, and neither is tested here.
+
+Whiff rate is still not park-independent — the spread across parks is 11% —
+which is why it is adjusted. The physical explanation simply does not survive
+contact with the split.
 
 ## Age relative to level
 
@@ -191,6 +257,32 @@ arms — which would be a real correlation rather than a measurement artifact.
 5. Normalize within the league so the mean is 1.0, which is what makes 1.0 mean
    "neutral for this league".
 
+### Components, and where each comes from
+
+Six come from game logs, which every season has: runs, strikeouts, walks, home
+runs, hits in play, extra-base hits.
+
+Four more — **whiffs**, **called strikes**, **ground balls** and **pull** — need
+pitch-level detail, which only play-by-play carries. That means one request per
+game, so they are gathered separately, cached per game and resumable. A season
+is roughly 8,000 games across the four full-season levels, about 20 minutes of
+fetching. Seasons without a play-by-play pass simply lack those components, and
+the blend treats them as neutral.
+
+Each of the four is regressed against its own denominator rather than a shared
+game count — swings, taken pitches, batted balls and located batted balls
+respectively. A park sees an order of magnitude fewer batted balls than pitches,
+and treating the two as equally well measured would leave the spray and
+trajectory factors noisier than they appear.
+
+The same play-by-play pass also produces per-player batted-ball totals, which is
+where pull rate and ground-ball rate in the skills section come from. Unlike the
+park factors, that half is needed for the **current** season, so the season in
+progress is topped up incrementally: `gather` skips games already cached, which
+during the season is a few hundred new games a day rather than a full backfill.
+
+None of this touches the daily digest, which only reads the committed factors.
+
 Hits in play are rated per ball in play; everything else per plate appearance.
 Otherwise a park that changes the strikeout rate would move the hits-in-play
 factor for the wrong reason.
@@ -229,9 +321,11 @@ which values best predict a park's next-season behavior, which becomes a
 tractable supervised problem now that several seasons of per-season factors are
 stored in `config/park_factors/`.
 
-A swinging-strike factor built from play-by-play would separate whiffs from
-called strikes, which the strikeout factor currently conflates. That is the
-single largest improvement available to the contact and command percentiles.
+The rookie and complex leagues have no park factors. A shared back-field is not
+really a park, and the schedules are too short to measure one.
+
+Why altitude moves called strikes is unexplained, and worth understanding
+before leaning on the called-strike factor too heavily.
 
 The same applies to `RUN_VALUES`. Proper linear weights are derived from run
 expectancy by base-out state, which needs play-by-play data. Deriving

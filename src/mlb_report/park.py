@@ -22,7 +22,8 @@ from .config_loader import bundled_config_dir
 # validation.
 SEASON_WEIGHTS = (5, 3, 1)
 
-COMPONENTS = (
+# Derived from game logs, which every season has.
+BOX_COMPONENTS = (
     "runs",
     "strikeouts",
     "walks",
@@ -30,6 +31,16 @@ COMPONENTS = (
     "hits_in_play",
     "extra_base_hits",
 )
+
+# Derived from play-by-play, and so only present for seasons that have been
+# gathered. Strikeouts blend whiffs and called strikes, and across parks the two
+# are unrelated to each other, so adjusting a bat-to-ball rate by the strikeout
+# factor imports zone variation that has nothing to do with it. Trajectory and
+# spray have no box-score equivalent at all: a scorer's ground ball and a hitter's
+# pulled ball are only ever recorded pitch by pitch.
+PITCH_COMPONENTS = ("whiffs", "called_strikes", "ground_balls", "pull")
+
+COMPONENTS = BOX_COMPONENTS + PITCH_COMPONENTS
 
 NEUTRAL = dict.fromkeys(COMPONENTS, 1.0)
 

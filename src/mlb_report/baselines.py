@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
 
+from . import pitch_data, statsapi
 from . import sabermetrics as sm
-from . import statsapi
 from .config_loader import user_data_dir
 
 
@@ -168,7 +168,8 @@ def load_pools(
             # as the default, which is how a park factor lookup quietly turns
             # neutral. Version it so shape changes force a refetch.
             if fresh and cached.get("schema") == _CACHE_SCHEMA:
-                return [PlayerSeason(**row) for row in cached["players"]]
+                pool = [PlayerSeason(**row) for row in cached["players"]]
+                return _with_batted_ball(pool, sport_ids, season, group)
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
@@ -187,6 +188,50 @@ def load_pools(
         ),
         encoding="utf-8",
     )
+    return _with_batted_ball(pool, sport_ids, season, group)
+
+
+def _with_batted_ball(
+    pool: list[PlayerSeason], sport_ids: tuple[int, ...], season: int, group: str
+) -> list[PlayerSeason]:
+    """
+    Fold play-by-play batted-ball counts into each player's season line.
+
+    Applied after the day's cache rather than before it, because play-by-play
+    for a season in progress keeps arriving: baking a partial count into a
+    cached pool would freeze these rates at whatever had been gathered when the
+    pool was first written.
+
+    Seasons that have not been gathered simply leave the counts absent, and the
+    rates then report nothing rather than zero.
+    """
+    side = "pitchers" if group == "pitching" else "batters"
+    totals: dict[int, dict[str, int]] = {}
+    for sport_id in sport_ids:
+        games = pitch_data.load_cached(sport_id, season)
+        if not games:
+            continue
+        for player, counts in pitch_data.by_player(games, side).items():
+            running = totals.setdefault(
+                player, dict.fromkeys(pitch_data.PLAYER_FIELDS, 0)
+            )
+            for name, value in counts.items():
+                running[name] += value
+
+    for player in pool:
+        counts = totals.get(player.player_id)
+        if not counts:
+            continue
+        # Two denominators, not one: a batted ball is classified by trajectory
+        # slightly more often than it is given a landing spot.
+        player.stat["groundBalls"] = counts["ground"]
+        player.stat["battedBalls"] = sum(
+            counts[field] for field in pitch_data.TRAJECTORY_FIELDS
+        )
+        player.stat["pulledBalls"] = counts["pull"]
+        player.stat["sprayedBalls"] = sum(
+            counts[field] for field in pitch_data.SPRAY_FIELDS
+        )
     return pool
 
 
@@ -217,30 +262,52 @@ HITTING_METRICS = {
 }
 
 PITCHING_METRICS = {
-    "contact_suppression": lambda stat: sm.strikeout_rate(stat),
+    "contact_suppression": sm.whiff_rate,
     "damage_limitation": lambda stat: sm.ground_ball_rate(stat),
     "command": lambda stat: sm.walk_rate(stat),
     "strikeouts_minus_walks": sm.strikeouts_minus_walks,
+}
+
+# Batted-ball shape, reported for hitters and pitchers alike. These are kept
+# apart from the skills above and from each other, because neither has a good
+# end: a high ground-ball rate is a virtue in a sinkerballer and a warning in a
+# hitter with power, and pull is a description of an approach rather than a
+# grade of it. They are ranked only so the number can be read against the
+# league, not scored.
+PROFILE_METRICS = {
+    "ground_ball": sm.ground_ball_rate,
+    "pull": sm.pull_rate,
 }
 
 # Lower is better, so the percentile is inverted before it is reported.
 INVERTED_METRICS = {"strikeout_rate", "command"}
 
 
-# Which park component each skill is measured against. A park that moves
-# strikeouts moves a pitcher's strikeout rate and a hitter's alike, so the
-# same factor serves both.
+# Which park component each skill is measured against. A rate is adjusted by
+# the park's effect on that same rate rather than on a proxy for it: bat-to-ball
+# skill goes against whiffs, not strikeouts, because a strikeout also carries a
+# called strike, and parks move the two independently of each other.
 METRIC_COMPONENTS = {
-    "contact": "strikeouts",
+    "contact": "whiffs",
     "power": "extra_base_hits",
+    # Walks are adjusted by the park's measured effect on walks. The
+    # called-strike factor describes the mechanism but tracks the outcome only
+    # weakly and inconsistently (-0.08, -0.37, -0.33 across three levels), so
+    # substituting it for the direct measurement would trade signal for noise.
     "discipline": "walks",
     "solid_contact": "hits_in_play",
     "strikeout_rate": "strikeouts",
-    "contact_suppression": "strikeouts",
+    "contact_suppression": "whiffs",
     "damage_limitation": "hits_in_play",
     "command": "walks",
     "strikeouts_minus_walks": "strikeouts",
+    "ground_ball": "ground_balls",
+    "pull": "pull",
 }
+
+# A park that inflates whiffs deflates contact, so that factor is flipped
+# before it is applied. Every other pairing moves in the same direction.
+INVERSE_OF_COMPONENT = {"contact"}
 
 
 def park_adjust(
@@ -249,9 +316,7 @@ def park_adjust(
     """
     Divide a rate by its park's effect on that component, at half strength.
 
-    Half, because roughly half a player's games are on the road. Contact is the
-    inverted case: a park that inflates strikeouts deflates contact, so the
-    factor is flipped before it is applied.
+    Half, because roughly half a player's games are on the road.
     """
     if value is None:
         return None
@@ -259,7 +324,7 @@ def park_adjust(
     if component is None:
         return value
     raw = factor.get(component, 1.0)
-    if metric == "contact":
+    if metric in INVERSE_OF_COMPONENT:
         raw = 1 / raw if raw else 1.0
     return value / ((raw + 1.0) / 2)
 
@@ -279,6 +344,7 @@ def build(
     are still measured with theirs baked in.
     """
     metrics = PITCHING_METRICS if group == "pitching" else HITTING_METRICS
+    metrics = {**metrics, **PROFILE_METRICS}
     by_league: dict[int, list[PlayerSeason]] = {}
     for player in pool:
         by_league.setdefault(player.league_id, []).append(player)

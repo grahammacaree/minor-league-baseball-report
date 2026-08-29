@@ -85,6 +85,7 @@ def _contexts(
                 age=evaluation.age_context(current, baseline),
                 production=evaluation.render_production(result),
                 skills=evaluation.render_skills(result),
+                profile=evaluation.render_profile(result),
                 prior=prior,
             )
     return contexts

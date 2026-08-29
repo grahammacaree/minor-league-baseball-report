@@ -25,8 +25,8 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from . import statsapi
-from .park import COMPONENTS
+from . import pitch_data, statsapi
+from .park import BOX_COMPONENTS, PITCH_COMPONENTS
 
 # Regression toward neutral, in plate appearances. A park with a full season of
 # roughly 10,000 PA across both sides keeps most of its observed effect; a park
@@ -39,7 +39,7 @@ class Totals:
     plate_appearances: float = 0.0
     balls_in_play: float = 0.0
     events: dict[str, float] = field(
-        default_factory=lambda: dict.fromkeys(COMPONENTS, 0.0)
+        default_factory=lambda: dict.fromkeys(BOX_COMPONENTS, 0.0)
     )
 
     def add(self, stat: dict) -> None:
@@ -181,7 +181,7 @@ def factors(collected: dict[int, dict]) -> dict[int, dict[int, dict[str, float]]
     for park, data in collected.items():
         at, away = data["at"], data["elsewhere"]
         components = {}
-        for component in COMPONENTS:
+        for component in BOX_COMPONENTS:
             home_rate = at.rate(component)
             away_rate = away.rate(component)
             if not home_rate or not away_rate:
@@ -193,7 +193,7 @@ def factors(collected: dict[int, dict]) -> dict[int, dict[int, dict[str, float]]
         by_league[data["league_id"]][park] = components
 
     for parks in by_league.values():
-        for component in COMPONENTS:
+        for component in BOX_COMPONENTS:
             values = [park[component] for park in parks.values()]
             mean = sum(values) / len(values) if values else 1.0
             if mean > 0:
@@ -202,5 +202,78 @@ def factors(collected: dict[int, dict]) -> dict[int, dict[int, dict[str, float]]
     return by_league
 
 
+def _pitch_sample(component: str, totals: dict[str, int]) -> int:
+    """
+    How many chances produced the rate, so regression is scaled to it.
+
+    Each component is regressed against its own denominator rather than a
+    shared game count: a park sees far fewer batted balls than pitches, and
+    treating the two as equally well measured would leave spray factors noisier
+    than they look.
+    """
+    if component == "whiffs":
+        return totals["swings"]
+    if component == "called_strikes":
+        return totals["pitches"] - totals["swings"]
+    if component == "ground_balls":
+        return sum(totals[field] for field in pitch_data.TRAJECTORY_FIELDS)
+    return sum(totals[field] for field in pitch_data.SPRAY_FIELDS)
+
+
+def pitch_factors(
+    sport_id: int, season: int, league_of: dict[int, int]
+) -> dict[int, dict[int, dict[str, float]]]:
+    """
+    Whiff, called-strike, ground-ball and pull factors, if play-by-play has
+    been gathered.
+
+    Same construction as the rest: the home club's games, both sides, here
+    against elsewhere. Returns nothing when the season has not been fetched,
+    since these components are optional rather than required.
+    """
+    games = pitch_data.load_cached(sport_id, season)
+    if not games:
+        return {}
+
+    home_of = home_team_by_game(sport_id, season)
+    at_home, on_road = pitch_data.by_club(games, home_of)
+
+    by_league: dict[int, dict[int, dict[str, float]]] = defaultdict(dict)
+    for club, home_totals in at_home.items():
+        road_totals = on_road.get(club)
+        if not road_totals:
+            continue
+        home_rates = pitch_data.rates(home_totals)
+        road_rates = pitch_data.rates(road_totals)
+        components = {}
+        for component in PITCH_COMPONENTS:
+            home_rate, road_rate = home_rates[component], road_rates[component]
+            if not home_rate or not road_rate:
+                continue
+            components[component] = _regress(
+                home_rate / road_rate, _pitch_sample(component, home_totals)
+            )
+        if components:
+            by_league[league_of.get(club, 0)][club] = components
+
+    for parks in by_league.values():
+        for component in PITCH_COMPONENTS:
+            values = [p[component] for p in parks.values() if component in p]
+            mean = sum(values) / len(values) if values else 1.0
+            if mean > 0:
+                for park_components in parks.values():
+                    if component in park_components:
+                        park_components[component] /= mean
+    return by_league
+
+
 def build(sport_id: int, season: int) -> dict[int, dict[int, dict[str, float]]]:
-    return factors(collect(sport_id, season))
+    collected = collect(sport_id, season)
+    by_league = factors(collected)
+
+    league_of = {club: data["league_id"] for club, data in collected.items()}
+    for league_id, parks in pitch_factors(sport_id, season, league_of).items():
+        for club, components in parks.items():
+            if club in by_league.get(league_id, {}):
+                by_league[league_id][club].update(components)
+    return by_league
