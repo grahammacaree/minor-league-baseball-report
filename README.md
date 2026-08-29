@@ -7,11 +7,15 @@ No game recaps, no LLM-written narrative. Just the prospects.
 
 ## What the email contains
 
-**Played yesterday.** Every top-ten prospect's line, including an explicit "did not
-play" so absences are visible, plus anyone from 11–30 who cleared a threshold worth
-an email. Grouped by level, since a level is a difficulty and the reader is comparing
-within one. Where everyone at a level faced the same club, the opponent moves up to
-the heading rather than repeating down the section.
+**Played yesterday.** Every top-ten prospect who played, whatever kind of night he
+had, plus anyone from 11–30 whose line cleared a threshold worth an email. Grouped
+by level, since a level is a difficulty and the reader is comparing within one. Where
+everyone at a level faced the same club, the opponent moves up to the heading rather
+than repeating down the section.
+
+A prospect who did not play is simply absent. Nobody is on the field every day, so
+listing the rest-days would be most of the section most of the time; a run of them
+that means something usually turns up in moves and injuries instead.
 
 **Top ten season lines.** The season so far, with each player ranked against his own
 league on five skills, and every level he has left this year listed beneath. Hot and
