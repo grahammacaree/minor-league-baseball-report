@@ -19,8 +19,8 @@ from math import exp, log
 from .config_loader import bundled_config_dir
 
 # Recency weights across the three most recent completed seasons. A convention
-# rather than a fitted result; see docs/METRICS.md for why it is flagged for
-# validation.
+# rather than a fitted result; see docs/CONVENTIONS.md for what fitting it
+# would take.
 SEASON_WEIGHTS = (5, 3, 1)
 
 # Derived from game logs, which every season has.
