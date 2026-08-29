@@ -63,6 +63,13 @@ jobs:
           printf '%s' "$MLB_REPORT_USER_ENV" > "$MLB_REPORT_CONFIG_HOME/.env"
           chmod 600 "$MLB_REPORT_CONFIG_HOME/user.json" "$MLB_REPORT_CONFIG_HOME/.env"
 
+      # The digest reports only the skills it has play-by-play for, so without
+      # this the batted-ball bars go missing rather than going wrong. Cached
+      # games are skipped: a full backfill on the first run, a day's games
+      # after that.
+      - name: Gather play-by-play
+        run: ./scripts/gather-pitch-data
+
       - name: Send digest
         run: |
           ARGS=""
@@ -74,13 +81,17 @@ jobs:
           fi
           ./scripts/run $ARGS
 
-      # Uploaded even when the send fails: the day's fetched logs are still
-      # worth keeping, and rebuilding them costs a full crawl.
+      # Uploaded even when the send fails: the day's fetched logs and swing
+      # outcomes are still worth keeping, and rebuilding them costs a full
+      # crawl. The play-by-play cache is the expensive half, at one request
+      # per game across a whole season.
       - name: Persist history
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlb-report-history
-          path: ${{ runner.temp }}/mlb-report/data/game_logs_*.ndjson
+          path: |
+            ${{ runner.temp }}/mlb-report/data/game_logs_*.ndjson
+            ${{ runner.temp }}/mlb-report/data/pitch_*.json
           retention-days: 400
           if-no-files-found: warn
