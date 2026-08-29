@@ -17,13 +17,24 @@ def _key(log: GameLog) -> tuple[int, int, str]:
 
 
 def load(season: int) -> list[GameLog]:
+    """
+    Read the season's history, discarding rows written by an older schema.
+
+    A stale line should cost that game, not the whole digest — the next fetch
+    rewrites the file in the current shape anyway.
+    """
     path = _path(season)
     if not path.exists():
         return []
+
     logs = []
     for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
+        if not line.strip():
+            continue
+        try:
             logs.append(GameLog.from_dict(json.loads(line)))
+        except (json.JSONDecodeError, KeyError, ValueError):
+            continue
     return logs
 
 

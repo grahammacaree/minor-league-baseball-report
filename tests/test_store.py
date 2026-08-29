@@ -70,6 +70,15 @@ def test_since_filters_to_the_window():
     assert [entry.game_date.day for entry in recent] == [20]
 
 
+def test_rows_from_an_older_schema_are_dropped_not_fatal(config_home):
+    store.save(2026, [log(day=1)])
+    path = config_home / "data" / "game_logs_2026.ndjson"
+    path.write_text(path.read_text() + '{"player_id": 2, "game_date": "2026-08-02"}\n')
+
+    history = store.load(2026)
+    assert [entry.player_id for entry in history] == [1]
+
+
 def test_seasons_are_stored_separately():
     store.save(2026, [log()])
     assert store.load(2025) == []

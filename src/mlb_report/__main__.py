@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date
+from datetime import date, timedelta
 
-from . import fetchers, store
+from . import digest as digest_module
+from . import fetchers, pipeline, store
 from . import prospects as prospects_module
 from .config_loader import load_settings
 
@@ -20,10 +21,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="print the digest instead of emailing it",
     )
     parser.add_argument(
+        "--date",
+        type=date.fromisoformat,
+        default=date.today() - timedelta(days=1),
+        help="day to report on (default: yesterday)",
+    )
+    parser.add_argument(
         "--season",
         type=int,
-        default=date.today().year,
-        help="season to report on (default: current year)",
+        default=None,
+        help="season to report on (default: the report date's year)",
     )
     parser.add_argument(
         "command",
@@ -56,8 +63,7 @@ def _fetch(season: int, org_id: int) -> None:
     added = store.save(season, logs)
     print(f"fetched {len(logs)} game logs for {len(tracked)} prospects ({added} new)")
 
-    today = date.today()
-    since, until = fetchers.lookback_window(today, days=7)
+    since, until = fetchers.lookback_window(date.today(), days=7)
     moves = fetchers.transactions(tracked, org_id, season, since, until)
     print(f"{len(moves)} tracked moves since {since}")
     for entry in moves:
@@ -67,18 +73,18 @@ def _fetch(season: int, org_id: int) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = load_settings()
+    season = args.season or args.date.year
 
     if args.command == "prospects":
-        _print_prospects(args.season)
+        _print_prospects(season)
         return 0
 
     if args.command == "fetch":
-        _fetch(args.season, settings["org"]["team_id"])
+        _fetch(season, settings["org"]["team_id"])
         return 0
 
-    print(f"{settings['org']['team_name']} farm report")
-    if args.dry_run:
-        print("(dry run)")
+    digest = pipeline.build_digest(args.date, season, settings)
+    print(digest_module.render(digest))
     return 0
 
 
