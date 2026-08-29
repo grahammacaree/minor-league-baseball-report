@@ -191,3 +191,37 @@ def test_a_player_already_tracked_is_not_added_twice():
     )
     assert extended == tracked
     assert acquired == []
+
+
+def departure(player_id: int, name: str = "Traded Away") -> Transaction:
+    return Transaction(
+        player_id=player_id,
+        player_name=name,
+        effective_date=date(2026, 7, 30),
+        type_desc="Trade",
+        description=f"{name} traded to the Chicago White Sox.",
+    )
+
+
+def test_a_prospect_traded_away_stops_being_tracked():
+    tracked = [
+        Prospect(1, "Kade Anderson", "LHP", 807739),
+        Prospect(2, "Ryan Sloan", "RHP", 815549),
+    ]
+    remaining, departed = prospects.without_departures(tracked, [departure(815549)])
+    assert [p.player_id for p in remaining] == [807739]
+    assert [move.player_id for move in departed] == [815549]
+
+
+def test_ranks_are_left_alone_when_somebody_leaves():
+    """Pipeline's numbering is not ours to close up; a gap is the truer record."""
+    tracked = [Prospect(rank, f"Player {rank}", "OF", rank) for rank in range(1, 4)]
+    remaining, _ = prospects.without_departures(tracked, [departure(2)])
+    assert [p.rank for p in remaining] == [1, 3]
+
+
+def test_a_departure_of_someone_untracked_changes_nothing():
+    tracked = [Prospect(1, "Kade Anderson", "LHP", 807739)]
+    remaining, departed = prospects.without_departures(tracked, [departure(999999)])
+    assert remaining == tracked
+    assert departed == []

@@ -132,6 +132,31 @@ def resolve_player_ids(prospects: list[Prospect], season: int) -> list[Prospect]
     ]
 
 
+def without_departures(
+    tracked: list[Prospect], departures: list[Transaction]
+) -> tuple[list[Prospect], list[Transaction]]:
+    """
+    Drop players the organization has traded away.
+
+    A committed list outlives the roster it describes. Until the next capture a
+    departed prospect would keep being fetched, reported on, and counted as one
+    of the ten the digest follows most closely — all for another team's farm
+    system.
+
+    Ranks are left as they were rather than closed up. They are Pipeline's
+    numbering, not ours to renumber, and a gap at 7 is a truer description of
+    the list than promoting everyone below it.
+    """
+    gone = {move.player_id for move in departures}
+    if not gone:
+        return tracked, []
+    remaining = [p for p in tracked if p.player_id not in gone]
+    departed = [
+        move for move in departures if move.player_id in {p.player_id for p in tracked}
+    ]
+    return remaining, sorted(departed, key=lambda m: (m.effective_date, m.player_name))
+
+
 def with_acquisitions(
     tracked: list[Prospect],
     arrivals: list[Transaction],

@@ -47,6 +47,8 @@ class Digest:
     moves: list[str] = field(default_factory=list)
     # Ranked players who have just joined the organization.
     arrivals: list[str] = field(default_factory=list)
+    # Tracked players who have just left it.
+    departures: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -58,7 +60,7 @@ class Digest:
         email worth arriving is somebody outside it forcing his way in, a roster
         move, or a new prospect in the system.
         """
-        return not (self.standouts or self.moves or self.arrivals)
+        return not (self.standouts or self.moves or self.arrivals or self.departures)
 
 
 def _by_player(logs: list[GameLog]) -> dict[int, list[GameLog]]:
@@ -200,6 +202,7 @@ def build(
     contexts: dict[int, PlayerContext] | None = None,
     whiffs: dict[tuple[int, int], int] | None = None,
     arrivals: list[tuple[Transaction, Ranked]] | None = None,
+    departures: list[Transaction] | None = None,
 ) -> Digest:
     digest = Digest(report_date=report_date)
     contexts = contexts or {}
@@ -271,6 +274,12 @@ def build(
             f"acquired {transaction.effective_date:%-d %B}"
         )
 
+    for move in departures or []:
+        digest.departures.append(
+            f"**{move.player_name}** — {move.description.rstrip('.')}, "
+            f"{move.effective_date:%-d %B}"
+        )
+
     unresolved = [p.name for p in tracked if p.player_id is None]
     if unresolved:
         digest.warnings.append(
@@ -320,5 +329,7 @@ def render(digest: Digest) -> str:
     # to skip the section on the day it finally matters.
     if digest.arrivals:
         out += _section("New in the system", digest.arrivals, "")
+    if digest.departures:
+        out += _section("Left the system", digest.departures, "")
     out += _section("Notes", [ADJUSTMENT_NOTE, *digest.warnings], "")
     return "\n".join(out).rstrip() + "\n"

@@ -245,24 +245,24 @@ def raw_move(player_id, type_desc="Trade", to_team=529, from_team=145, person=Tr
 
 def test_a_player_joining_from_another_org_is_an_arrival(api):
     api.transactions_by_team = {529: [raw_move(695722)]}
-    found = fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    found, _ = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
     assert [a.player_id for a in found] == [695722]
 
 
 def test_a_promotion_inside_the_org_is_not_an_arrival(api):
     """Both ends are ours, so nobody has actually joined."""
     api.transactions_by_team = {619: [raw_move(703155, to_team=619, from_team=529)]}
-    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+    assert fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))[0] == []
 
 
 def test_a_departure_is_not_an_arrival(api):
     api.transactions_by_team = {529: [raw_move(703155, to_team=145, from_team=529)]}
-    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+    assert fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))[0] == []
 
 
 def test_the_cash_in_a_trade_names_no_player_and_is_dropped(api):
     api.transactions_by_team = {529: [raw_move(None, person=False)]}
-    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+    assert fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))[0] == []
 
 
 def test_a_minor_league_signing_is_not_treated_as_an_acquisition(api):
@@ -270,10 +270,30 @@ def test_a_minor_league_signing_is_not_treated_as_an_acquisition(api):
     api.transactions_by_team = {
         529: [raw_move(695722, type_desc="Signed as Free Agent")]
     }
-    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+    assert fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))[0] == []
 
 
 def test_an_arrival_reported_by_two_clubs_is_listed_once(api):
     api.transactions_by_team = {529: [raw_move(695722)], 619: [raw_move(695722)]}
-    found = fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    found, _ = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
     assert len(found) == 1
+
+
+def test_a_player_traded_out_of_the_org_is_a_departure(api):
+    api.transactions_by_team = {529: [raw_move(703155, to_team=145, from_team=529)]}
+    _, left = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    assert [move.player_id for move in left] == [703155]
+
+
+def test_an_arrival_is_not_also_counted_as_a_departure(api):
+    api.transactions_by_team = {529: [raw_move(695722)]}
+    joined, left = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    assert [move.player_id for move in joined] == [695722]
+    assert left == []
+
+
+def test_a_promotion_is_neither_coming_nor_going(api):
+    """Both ends are ours, so nothing crossed the boundary."""
+    api.transactions_by_team = {619: [raw_move(703155, to_team=619, from_team=529)]}
+    joined, left = fetchers.crossings(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    assert joined == [] and left == []

@@ -117,16 +117,16 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     org_id = settings["org"]["team_id"]
     tracked = prospects.tracked_prospects(season)
 
-    # Acquisitions are resolved before anything is fetched, so a prospect who
-    # arrived in a trade is followed from the day he arrives rather than from
-    # the next time the rankings are captured. The window runs back to the
-    # capture itself: a July trade is still the reason he is on the list in
-    # September, long after it stopped being news.
-    tracked, acquired = prospects.with_acquisitions(
-        tracked,
-        fetchers.arrivals(org_id, season, rankings.captured_on(), report_date),
-        rankings.load(),
+    # Who the organization actually has is settled before anything is fetched,
+    # so a prospect traded in is followed from the day he arrives and one traded
+    # away stops being fetched at all. The window runs back to the capture
+    # itself: a July trade is still the reason the list is wrong in September,
+    # long after it stopped being news.
+    joined, left = fetchers.crossings(
+        org_id, season, rankings.captured_on(), report_date
     )
+    tracked, departed = prospects.without_departures(tracked, left)
+    tracked, acquired = prospects.with_acquisitions(tracked, joined, rankings.load())
 
     levels = fetchers.current_levels(tracked, org_id, season)
     promoted = fetchers.in_majors(levels)
@@ -139,6 +139,7 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     # Followed all season, but reported only while it is still news. A trade
     # from July would otherwise head the digest into September.
     recent = [pair for pair in acquired if since <= pair[0].effective_date <= until]
+    recently_gone = [move for move in departed if since <= move.effective_date <= until]
     # Major league games are dropped on the way out of the store as well as on
     # the way in, since a player promoted before this rule existed already has
     # them on disk. Everything downstream -- the day's line, streaks, notable
@@ -161,6 +162,7 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
         ),
         whiffs=whiffs,
         arrivals=recent,
+        departures=recently_gone,
     )
 
     captured = prospects.captured_on()
