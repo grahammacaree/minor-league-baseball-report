@@ -71,16 +71,39 @@ carries no imported assumption. Lower FIP- is better.
 
 ## Skills
 
-Reported as percentile ranks within the player's own league, so the same number
-means the same thing at every level.
+Five rates a side, each shown as the observed number followed by its percentile
+rank within the player's own league, so the same rank means the same thing at
+every level.
 
-| Skill | Hitters | Pitchers |
-|-------|---------|----------|
-| Contact | swings that make contact | whiff rate |
-| Power / damage | three rates, below | ground-ball rate |
-| Discipline / command | walk rate | walk rate, inverted |
+| | Hitters | Pitchers |
+|---|---|---|
+| Bat-to-ball | `Contact%` | `Whiff%` |
+| Damage | `HR/FB` | `HR/FB↓` |
+| Ball in the air | `Air%` | `GB%` |
+| Direction | `Pull%` | `Pull%↓` |
+| Plate discipline | `BB%` | `BB%↓` |
 
-Walk rate is inverted for pitchers, so a low rate ranks high.
+The two sides mirror each other deliberately. The same events describe both
+participants, and a reader who has learned to read one column can read the
+other.
+
+Rates are named for what they measure rather than for the virtue they imply —
+`Whiff%` rather than "swing-and-miss ability" — because a reader can check a
+named rate anywhere else and cannot check a grade. The naming has to be exact
+to be worth anything: `Whiff%` here is whiffs per swing, around 35%, and
+calling it `SwStr%` would promise the per-pitch version at around 11%.
+
+A long bar always means good, which for a pitcher means several rates are
+inverted: allowing few home runs per fly ball is the achievement, not allowing
+many. Inversion is marked in the name with `↓`, so nothing is quietly reversed
+behind the reader's back.
+
+Two of these have no good end at all. Pull rate describes an approach rather
+than ranking it, and air rate is a style before it is a skill. They are ranked
+in the direction that conventionally flatters — pulling and lifting for a
+hitter, the reverse for a pitcher — and the rate itself is printed beside the
+bar precisely so a reader who disagrees with that framing can ignore it and
+read the number.
 
 ### Power, as three rates
 
@@ -115,24 +138,12 @@ balls were padding the denominator, and he moved to 93rd once the two were
 separated. Ratios of two play-by-play counts, such as air and pull, survived the
 pooling unharmed, since both halves were inflated equally.
 
-### Batted-ball profile
+### Where ground balls and spray come from
 
-Pitchers carry one further rate on its own line, deliberately not folded into
-the skills above:
-
-| Rate | Denominator | Source |
-|------|-------------|--------|
-| Pull | batted balls with a landing spot | play-by-play coordinates |
-
-It is not graded, because it has no good end: pull rate describes an approach
-rather than ranking it. It is shown as the rate itself with the league
-percentile in parentheses, so the number leads and the rank only places it. A
-pitcher's ground-ball rate is left out because it is already a headline skill
-for him, where it does have a good end.
-
-Hitters have no profile line at all. Their pull rate is now a power bar, and
-their ground-ball rate is exactly one minus the air rate beside it, so reporting
-both would be the same number told twice and backwards.
+Neither side carries a separate profile line. Everything a profile would have
+said is now a bar, and the two would have overlapped: a hitter's ground-ball
+rate is exactly one minus the air rate beside it, so printing both is the same
+number told twice and backwards.
 
 Ground-ball rate is taken from play-by-play even though `seasonAdvanced` carries
 its own ground-ball counts, hits included, which sum exactly to `ballsInPlay`
@@ -233,6 +244,12 @@ contact with the split.
 Reported next to the numbers and deliberately never inside them. A 20-year-old
 posting a league-average line in Double-A is the signal; folding age into wRC+
 would hide it. League average age is computed from the same qualified pool.
+
+Written as three quantities rather than a sentence — `AA Arkansas, 20yo, TEX -4`
+— which reads as where he is, how old he is, and how that age sits against the
+league. Negative is young for the level, the direction that flatters a prospect.
+A player whose season is blended across two leagues has both named here, so
+`SOU/TEX` is the signal that the ranks beneath it are a mixture.
 
 ## Levels and stints
 
@@ -393,18 +410,14 @@ park:
 
 ### Open questions
 
-The 5-3-1 weights are a convention, not a fitted result, and so is the 4,000 PA
-regression constant. Both are candidates for validation: the honest test is
-which values best predict a park's next-season behavior, which becomes a
-tractable supervised problem now that several seasons of per-season factors are
-stored in `config/park_factors/`.
-
 The rookie and complex leagues have no park factors. A shared back-field is not
 really a park, and the schedules are too short to measure one.
 
 Why altitude moves called strikes is unexplained, and worth understanding
 before leaning on the called-strike factor too heavily.
 
-The same applies to `RUN_VALUES`. Proper linear weights are derived from run
-expectancy by base-out state, which needs play-by-play data. Deriving
-league-specific weights would remove the last major-league assumption in wRC+.
+The 5-3-1 season weights and the 4,000 PA regression constant are conventions
+rather than fitted results, as are the sample floors, the notability
+thresholds, and the linear weights behind wRC+. All of them are collected in
+[CONVENTIONS.md](CONVENTIONS.md), with what it would take to learn each one
+instead.

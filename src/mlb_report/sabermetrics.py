@@ -5,8 +5,9 @@ Pure functions over stat dictionaries: no I/O, no fetching. League context
 arrives as an already-computed baseline so the same maths can be pointed at a
 season, a date range, or a hypothetical.
 
-Every constant here is documented in docs/METRICS.md, including which are
-derived from the data and which are conventions carried over from the majors.
+Every constant here is documented in docs/METRICS.md. The ones carried over
+from the majors rather than derived from the data are collected in
+docs/CONVENTIONS.md.
 """
 
 from __future__ import annotations
