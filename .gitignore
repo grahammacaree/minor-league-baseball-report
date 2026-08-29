@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+.DS_Store
+
+# Local state and secrets live in the config home, but guard against strays.
+.env
+data/
