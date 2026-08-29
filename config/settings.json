@@ -8,6 +8,11 @@
     "watchlist": 10,
     "notable": 30
   },
+  "moves_lookback_days": 2,
+  "minimum_sample": {
+    "hitting": 50,
+    "pitching": 50
+  },
   "notable_thresholds": {
     "hits": 2,
     "extra_base_hits": 2,

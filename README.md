@@ -19,23 +19,42 @@ Everything comes from public MLB endpoints, unauthenticated and free:
 
 | Source | Used for |
 |--------|----------|
-| `mlb.com/prospects/mariners` | The Pipeline top 30 ranking (server-rendered HTML) |
+| `config/prospects.json` | The Pipeline top 30 ranking |
+| `statsapi.mlb.com` rosters | Resolving prospect names to MLB player ids |
 | `statsapi.mlb.com` game logs | Per-player daily lines, at whatever level they're playing |
 | `statsapi.mlb.com` transactions | Roster moves and injury placements |
 
 Game logs are fetched per player rather than per affiliate, so a midseason promotion
 needs no configuration change.
 
+## Maintaining the ranking
+
+`mlb.com/prospects/mariners` only serves the top five to non-browser clients — the rest of
+the list is rendered client-side and cannot be fetched with a plain HTTP request. So the
+ranking is committed rather than scraped.
+
+MLB Pipeline reworks the org lists twice a season, in the spring and again after the
+trade deadline. When a refresh is due, the digest says so. Regenerating it means reading
+the table off the page and updating `config/prospects.json`; only `rank`, `name`, and
+`position` matter, since ids are resolved from affiliate rosters at runtime and may be
+left `null` for players who have not been assigned yet.
+
 ## Setup
 
 ```bash
 pip install -r requirements.txt
+mkdir -p ~/.config/mlb-report
 cp config/user.example.json ~/.config/mlb-report/user.json
+cp config/env.example ~/.config/mlb-report/.env && chmod 600 ~/.config/mlb-report/.env
 ```
 
-Edit `~/.config/mlb-report/user.json` to set the digest recipients. SMTP credentials go in
-`~/.config/mlb-report/.env`, which is never committed. Override the config location with
-`MLB_REPORT_CONFIG_HOME`.
+`user.json` holds the recipient list; `.env` holds SMTP credentials. Neither is committed,
+and the split means adding someone to the digest never touches secrets. In CI the SMTP
+values come from environment variables instead, which take precedence over the file.
+Override the config location with `MLB_REPORT_CONFIG_HOME`.
+
+Set `send_when_quiet` to `false` in `user.json` to skip the email on nights when nothing
+cleared the bar.
 
 ## Usage
 
