@@ -130,6 +130,9 @@ HEADLINE_SKILLS = {
 
 INVERTED_MARK = "\u2193"
 
+# Between one skill and the next on a rendered line.
+SKILL_SEPARATOR = " \u00b7 "
+
 
 def evaluate(
     player: PlayerSeason,
@@ -296,7 +299,7 @@ def render_skills(evaluation: Evaluation) -> str | None:
         for skill in evaluation.skills
         if skill.percentile is not None and skill.value is not None
     ]
-    return " · ".join(parts) if parts else None
+    return SKILL_SEPARATOR.join(parts) if parts else None
 
 
 def _full_line(evaluation: Evaluation) -> str:
