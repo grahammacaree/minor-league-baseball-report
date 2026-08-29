@@ -19,6 +19,62 @@ from .digest import Digest
 _BOLD = re.compile(r"\*\*(.+?)\*\*", re.S)
 _CODE = re.compile(r"`([^`]+)`")
 
+# A skill as evaluation.render_skills writes it: "Contact 58th". Recognised here
+# rather than passed through as structured data because the digest is one
+# markdown document that becomes both the text and the HTML part, and the text
+# part wants exactly these words.
+_SKILL = re.compile(r"^([A-Za-z](?:[A-Za-z ]*[A-Za-z])?) (\d{1,3})(st|nd|rd|th)$")
+
+# Bars are drawn as table cells with a background colour, not as images or CSS
+# widths. Mail clients block images by default and Outlook's desktop renderer
+# is the Word engine, which mishandles styled divs; a table with width and
+# bgcolor attributes is the one construction that survives everywhere.
+_BAR_WIDTH = 108
+_BAR_HEIGHT = 7
+_TRACK = "#e8e8ed"
+_FILL = "#0c2c56"
+
+
+def _bar(percentile: int) -> str:
+    filled = max(1, round(_BAR_WIDTH * percentile / 100))
+    empty = _BAR_WIDTH - filled
+    cells = f'<td width="{filled}" height="{_BAR_HEIGHT}" bgcolor="{_FILL}"></td>'
+    if empty:
+        cells += f'<td width="{empty}" height="{_BAR_HEIGHT}" bgcolor="{_TRACK}"></td>'
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+        f'width="{_BAR_WIDTH}" style="border-collapse:collapse;table-layout:fixed">'
+        f"<tr>{cells}</tr></table>"
+    )
+
+
+def skill_bars(line: str) -> str | None:
+    """
+    A skills line redrawn as bars, or nothing if the line is something else.
+
+    All of the line has to parse before any of it is redrawn, so an unexpected
+    shape degrades to the text it already was rather than to a half-built
+    table.
+    """
+    parts = [segment.strip() for segment in line.split("·")]
+    matches = [_SKILL.match(part) for part in parts]
+    if len(parts) < 2 or not all(matches):
+        return None
+
+    rows = []
+    for match in matches:
+        name, percentile = match.group(1), int(match.group(2))
+        rows.append(
+            f'<tr><td style="{_STYLE["bar_label"]}">{name}</td>'
+            f'<td style="{_STYLE["bar_track"]}">{_bar(percentile)}</td>'
+            f'<td style="{_STYLE["bar_rank"]}">{percentile}{match.group(3)}</td></tr>'
+        )
+    return (
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
+        f'style="{_STYLE["bars"]}"><tbody>{"".join(rows)}</tbody></table>'
+    )
+
+
 _STYLE = {
     "body": (
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,"
@@ -36,6 +92,16 @@ _STYLE = {
     "li": "margin:0 0 10px",
     "sub": "color:#6e6e73;font-size:13px",
     "em": "color:#6e6e73;font-style:normal",
+    "bars": "margin:6px 0 2px;border-collapse:collapse",
+    "bar_label": (
+        "font-size:12px;color:#6e6e73;padding:2px 10px 2px 0;"
+        "white-space:nowrap;vertical-align:middle"
+    ),
+    "bar_track": "padding:2px 0;vertical-align:middle;width:108px",
+    "bar_rank": (
+        "font-size:12px;color:#6e6e73;padding:2px 0 2px 8px;"
+        "vertical-align:middle;white-space:nowrap"
+    ),
     "code": (
         "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;"
         "background:#f5f5f7;padding:1px 5px;border-radius:4px"
@@ -60,10 +126,21 @@ def markdown_to_html(text: str) -> str:
         items = []
         for lines in bullets:
             head = _inline_html(lines[0])
-            rest = "".join(
-                f'<br><span style="{_STYLE["sub"]}">{_inline_html(line)}</span>'
-                for line in lines[1:]
-            )
+            rest = ""
+            after_bars = False
+            for line in lines[1:]:
+                bars = skill_bars(line)
+                if bars:
+                    rest += bars
+                else:
+                    # A table has already ended the line, so a break after one
+                    # would open a gap rather than close it.
+                    lead = "" if after_bars else "<br>"
+                    rest += (
+                        f'{lead}<span style="{_STYLE["sub"]}">'
+                        f"{_inline_html(line)}</span>"
+                    )
+                after_bars = bool(bars)
             items.append(f'<li style="{_STYLE["li"]}">{head}{rest}</li>')
         out.append(f'<ul style="{_STYLE["ul"]}">{"".join(items)}</ul>')
         bullets.clear()

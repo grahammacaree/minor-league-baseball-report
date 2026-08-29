@@ -92,3 +92,39 @@ def test_process_environment_overrides_the_env_file(tmp_path, monkeypatch):
     (tmp_path / ".env").write_text("SMTP_HOST=from-file\n")
     monkeypatch.setenv("SMTP_HOST", "from-ci")
     assert config_loader.load_env()["SMTP_HOST"] == "from-ci"
+
+
+def test_a_skills_line_becomes_bars():
+    """Percentiles are easier to scan as lengths than as a row of numbers."""
+    html = emailer.markdown_to_html(
+        "- **A Player** — 2-4\n  Contact 58th · Power 77th · Discipline 17th\n"
+    )
+    assert "<table" in html
+    assert "Contact" in html and "58th" in html
+    # Widths track the percentiles, so a stronger skill draws a longer bar.
+    assert 'width="63"' in html and 'width="83"' in html
+
+
+def test_a_bar_is_never_completely_empty():
+    """A first-percentile skill still needs something to see."""
+    html = emailer.markdown_to_html(
+        "- **A Player** — 2-4\n  Contact 1st · Power 94th\n"
+    )
+    assert 'width="1"' in html
+
+
+def test_lines_that_are_not_skills_are_left_as_text():
+    """The batted-ball line leads with a rate, so it stays prose."""
+    line = "34% grounders (10th) · 50% pulled (92nd)"
+    assert emailer.skill_bars(line) is None
+    html = emailer.markdown_to_html(f"- **A Player** — 2-4\n  {line}\n")
+    assert "34% grounders" in html
+    assert "<table" not in html
+
+
+def test_text_after_bars_is_not_pushed_away_by_a_break():
+    """The table has already ended the line; a break would open a gap."""
+    html = emailer.markdown_to_html(
+        "- **A Player** — 2-4\n  Contact 58th · Power 77th\n  34% grounders (10th)\n"
+    )
+    assert "</table><br>" not in html
