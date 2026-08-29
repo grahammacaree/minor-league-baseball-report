@@ -4,6 +4,7 @@ import argparse
 import sys
 from datetime import date
 
+from . import fetchers, store
 from . import prospects as prospects_module
 from .config_loader import load_settings
 
@@ -28,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
         "command",
         nargs="?",
         default="digest",
-        choices=["digest", "prospects"],
-        help="prospects prints the tracked list and exits",
+        choices=["digest", "prospects", "fetch"],
+        help="prospects lists tracked players; fetch pulls logs into the local store",
     )
     return parser
 
@@ -49,12 +50,30 @@ def _print_prospects(season: int) -> None:
         print(f"\nRanking captured {captured} — a Pipeline update has landed since.")
 
 
+def _fetch(season: int, org_id: int) -> None:
+    tracked = prospects_module.tracked_prospects(season)
+    logs = fetchers.game_logs(tracked, org_id, season)
+    added = store.save(season, logs)
+    print(f"fetched {len(logs)} game logs for {len(tracked)} prospects ({added} new)")
+
+    today = date.today()
+    since, until = fetchers.lookback_window(today, days=7)
+    moves = fetchers.transactions(tracked, org_id, season, since, until)
+    print(f"{len(moves)} tracked moves since {since}")
+    for entry in moves:
+        print(f"  {entry.effective_date}  {entry.description}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = load_settings()
 
     if args.command == "prospects":
         _print_prospects(args.season)
+        return 0
+
+    if args.command == "fetch":
+        _fetch(args.season, settings["org"]["team_id"])
         return 0
 
     print(f"{settings['org']['team_name']} farm report")

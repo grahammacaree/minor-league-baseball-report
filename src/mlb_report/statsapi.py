@@ -63,3 +63,34 @@ def affiliate_teams(parent_org_id: int, season: int) -> list[dict]:
 
 def sport_players(sport_id: int, season: int) -> list[dict]:
     return get(f"sports/{sport_id}/players", season=season).get("people", [])
+
+
+def people(player_ids: list[int], hydrate: str | None = None) -> list[dict]:
+    if not player_ids:
+        return []
+    ids = ",".join(str(i) for i in player_ids)
+    return get("people", personIds=ids, hydrate=hydrate).get("people", [])
+
+
+def game_log(player_id: int, group: str, season: int, sport_id: int) -> list[dict]:
+    """
+    One player's game-by-game log at a single level.
+
+    The endpoint rejects a comma-separated sportId, so callers fetch the levels
+    they care about one at a time.
+    """
+    payload = get(
+        f"people/{player_id}/stats",
+        stats="gameLog",
+        group=group,
+        season=season,
+        sportId=sport_id,
+    )
+    return [split for block in payload.get("stats", []) for split in block["splits"]]
+
+
+def transactions(team_id: int, start_date: str, end_date: str) -> list[dict]:
+    payload = get(
+        "transactions", teamId=team_id, startDate=start_date, endDate=end_date
+    )
+    return payload.get("transactions", [])
