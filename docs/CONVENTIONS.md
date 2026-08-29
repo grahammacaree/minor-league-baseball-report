@@ -117,6 +117,7 @@ digest that is too long or too short.
 | `stolen_bases` | 2 | Steals before a line qualifies |
 | `strikeouts_pitched` | 6 | Strikeouts in an outing before it qualifies |
 | `scoreless_innings_relief` | 2 | Scoreless relief innings before an outing qualifies |
+| `min_scoreless_outings` | 3 | Consecutive scoreless outings before a streak is reported |
 | `min_hit_streak` | 5 | Games with a hit before a streak is reported |
 | `rolling_windows_days` | 7, 15 | The two windows hot and cold form are measured over |
 | `min_rolling_plate_appearances` | 15 | Sample before a rolling split is reported at all |
@@ -144,6 +145,7 @@ the codebase is unaccounted for.
 |---|---|---|
 | Play-by-play workers | 6 | Concurrent requests during a backfill, kept modest against an unauthenticated public API |
 | Backfill checkpoint | 500 games | How often a long gather writes its cache |
+| Gathered levels | Triple-A, Double-A, High-A, Single-A | Which levels the daily top-up covers, the complex and Dominican leagues costing thousands of games for skills no ranked prospect is judged on |
 | HTTP timeout, retries, backoff | 20s, 3 attempts, exponential | Behaviour against a flaky public endpoint |
 | Leaderboard page size | 1,000 | Pagination |
 | Capture timeout | 30s | How long the ranking scrape waits for a page, generous because it runs twice a year |

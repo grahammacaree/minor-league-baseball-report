@@ -57,9 +57,10 @@ Everything comes from public MLB endpoints, unauthenticated and free:
 Game logs are fetched per player rather than per affiliate, so a midseason promotion
 needs no configuration change.
 
-The daily run is deliberately cheap. Play-by-play costs a request per game, so the
-season-scale gathering behind park factors happens offline, and the daily job asks
-only about yesterday's outings.
+Play-by-play costs a request per game, so it is cached rather than refetched. The
+season-scale work behind park factors happens offline; the scheduled job tops the cache
+up before each digest, which is a backfill the first time and a day's games thereafter.
+Building the digest itself asks only about yesterday's outings.
 
 ## Keeping the tracked list updated
 
@@ -128,9 +129,15 @@ September, so the alternative is an empty digest every morning until April. Set
 ## Usage
 
 ```bash
-./scripts/run              # build and send today's digest
-./scripts/run --dry-run    # print the digest to stdout instead of emailing
+./scripts/run                # build and send today's digest
+./scripts/run --dry-run      # print the digest to stdout instead of emailing
+./scripts/gather-pitch-data  # top up the play-by-play the skill bars are built from
 ```
+
+Every run reports what it found and what it went without — pool sizes, games held per
+level, park factor coverage, how many skill bars were rendered — because most gaps here
+are silent by design. A missing cache means fewer bars, not an error, and the summary is
+what tells the two apart.
 
 ## Development
 

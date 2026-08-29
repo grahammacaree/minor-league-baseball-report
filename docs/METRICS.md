@@ -17,8 +17,11 @@ outs broken out by trajectory (line, fly, ground, pop).
 
 Play-by-play adds two things the season feed has no equivalent for: the split of
 a strikeout into whiffs and called strikes, and where a batted ball landed. It
-costs one request per game, so it is gathered offline rather than in the daily
-run.
+costs one request per game, so it is cached per game and gathered incrementally:
+the first pass over a season is a backfill of several thousand games, and each
+run after it fetches the previous day. The digest reads the cache and reports
+only the skills it finds there, so a level that has never been gathered loses
+its batted-ball bars rather than delaying the email.
 
 ## League context
 
