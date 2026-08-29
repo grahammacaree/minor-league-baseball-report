@@ -228,3 +228,52 @@ def test_a_game_that_cannot_be_read_is_skipped(monkeypatch):
     ]
 
     assert fetchers.whiffs_for_outings(logs) == {}
+
+
+def raw_move(player_id, type_desc="Trade", to_team=529, from_team=145, person=True):
+    entry = {
+        "typeDesc": type_desc,
+        "effectiveDate": "2026-07-30",
+        "toTeam": {"id": to_team},
+        "fromTeam": {"id": from_team},
+        "description": "Traded to the Seattle Mariners.",
+    }
+    if person:
+        entry["person"] = {"id": player_id, "fullName": "Boston Smith"}
+    return entry
+
+
+def test_a_player_joining_from_another_org_is_an_arrival(api):
+    api.transactions_by_team = {529: [raw_move(695722)]}
+    found = fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    assert [a.player_id for a in found] == [695722]
+
+
+def test_a_promotion_inside_the_org_is_not_an_arrival(api):
+    """Both ends are ours, so nobody has actually joined."""
+    api.transactions_by_team = {619: [raw_move(703155, to_team=619, from_team=529)]}
+    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+
+
+def test_a_departure_is_not_an_arrival(api):
+    api.transactions_by_team = {529: [raw_move(703155, to_team=145, from_team=529)]}
+    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+
+
+def test_the_cash_in_a_trade_names_no_player_and_is_dropped(api):
+    api.transactions_by_team = {529: [raw_move(None, person=False)]}
+    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+
+
+def test_a_minor_league_signing_is_not_treated_as_an_acquisition(api):
+    """Mostly organizational depth, and it would bury the case worth catching."""
+    api.transactions_by_team = {
+        529: [raw_move(695722, type_desc="Signed as Free Agent")]
+    }
+    assert fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29)) == []
+
+
+def test_an_arrival_reported_by_two_clubs_is_listed_once(api):
+    api.transactions_by_team = {529: [raw_move(695722)], 619: [raw_move(695722)]}
+    found = fetchers.arrivals(ORG, 2026, date(2026, 3, 1), date(2026, 8, 29))
+    assert len(found) == 1

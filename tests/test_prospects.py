@@ -6,7 +6,9 @@ from datetime import date
 import pytest
 
 from mlb_report import prospects
+from mlb_report.models import Transaction
 from mlb_report.prospects import Prospect
+from mlb_report.rankings import Ranked
 
 
 @pytest.fixture
@@ -116,3 +118,76 @@ def test_refresh_is_due_once_a_ranking_update_has_passed(bundled_config):
 
 def test_refresh_is_due_when_the_list_predates_this_season(bundled_config):
     assert prospects.refresh_due(date(2025, 8, 1), as_of=date(2026, 4, 10))
+
+
+def acquisition(player_id: int, name: str = "Boston Smith") -> Transaction:
+    return Transaction(
+        player_id=player_id,
+        player_name=name,
+        effective_date=date(2026, 7, 30),
+        type_desc="Trade",
+        description=f"{name} traded to the Seattle Mariners.",
+    )
+
+
+def ranked(player_id: int, rank: int, position: str = "C") -> Ranked:
+    return Ranked(
+        player_id=player_id,
+        name="Boston Smith",
+        position=position,
+        rank=rank,
+        org_name="Chicago White Sox",
+        org_abbreviation="CWS",
+    )
+
+
+def test_an_acquired_prospect_joins_the_tracked_list():
+    tracked = [Prospect(1, "Kade Anderson", "LHP", 807739)]
+    extended, acquired = prospects.with_acquisitions(
+        tracked, [acquisition(695722)], {695722: ranked(695722, 4)}
+    )
+    assert [p.player_id for p in extended] == [807739, 695722]
+    assert extended[-1].position == "C"
+    assert acquired[0][1].describe() == "CWS No. 4"
+
+
+def test_an_acquisition_nobody_ranked_is_left_alone():
+    """Most players changing organizations are depth, and not worth following."""
+    tracked = [Prospect(1, "Kade Anderson", "LHP", 807739)]
+    extended, acquired = prospects.with_acquisitions(
+        tracked, [acquisition(111111, "A Reliever")], {}
+    )
+    assert extended == tracked
+    assert acquired == []
+
+
+def test_an_acquisition_is_added_below_the_committed_list():
+    """
+    Another club's opinion should not push a player into our watchlist, which
+    is the top ten of a ranking somebody made about this organization.
+    """
+    tracked = [Prospect(rank, f"Player {rank}", "OF", rank) for rank in range(1, 31)]
+    extended, _ = prospects.with_acquisitions(
+        tracked, [acquisition(695722)], {695722: ranked(695722, 1)}
+    )
+    assert extended[-1].rank == 31
+
+
+def test_the_best_acquisition_is_listed_first():
+    tracked = [Prospect(1, "Kade Anderson", "LHP", 807739)]
+    extended, _ = prospects.with_acquisitions(
+        tracked,
+        [acquisition(222), acquisition(111)],
+        {222: ranked(222, 20), 111: ranked(111, 3)},
+    )
+    assert [p.player_id for p in extended[1:]] == [111, 222]
+
+
+def test_a_player_already_tracked_is_not_added_twice():
+    """A prospect can be reacquired, and the ranking may already carry him."""
+    tracked = [Prospect(13, "Boston Smith", "C", 695722)]
+    extended, acquired = prospects.with_acquisitions(
+        tracked, [acquisition(695722)], {695722: ranked(695722, 4)}
+    )
+    assert extended == tracked
+    assert acquired == []

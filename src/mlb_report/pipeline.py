@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import date
 
-from . import baselines, evaluation, fetchers, park, prospects, statsapi, store
+from . import (
+    baselines,
+    evaluation,
+    fetchers,
+    park,
+    prospects,
+    rankings,
+    statsapi,
+    store,
+)
 from . import digest as digest_module
 from .digest import MAJORS, Digest, PlayerContext
 
@@ -106,6 +115,17 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
     org_id = settings["org"]["team_id"]
     tracked = prospects.tracked_prospects(season)
 
+    # Acquisitions are resolved before anything is fetched, so a prospect who
+    # arrived in a trade is followed from the day he arrives rather than from
+    # the next time the rankings are captured. The window runs back to the
+    # capture itself: a July trade is still the reason he is on the list in
+    # September, long after it stopped being news.
+    tracked, acquired = prospects.with_acquisitions(
+        tracked,
+        fetchers.arrivals(org_id, season, rankings.captured_on(), report_date),
+        rankings.load(),
+    )
+
     levels = fetchers.current_levels(tracked, org_id, season)
     promoted = fetchers.in_majors(levels)
     store.save(season, fetchers.game_logs(tracked, org_id, season, levels=levels))
@@ -114,6 +134,9 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
         report_date, days=settings["moves_lookback_days"]
     )
     moves = fetchers.transactions(tracked, org_id, season, since, until)
+    # Followed all season, but reported only while it is still news. A trade
+    # from July would otherwise head the digest into September.
+    recent = [pair for pair in acquired if since <= pair[0].effective_date <= until]
     # Major league games are dropped on the way out of the store as well as on
     # the way in, since a player promoted before this rule existed already has
     # them on disk. Everything downstream -- the day's line, streaks, notable
@@ -135,6 +158,7 @@ def build_digest(report_date: date, season: int, settings: dict) -> Digest:
             tracked, history, report_date, season, settings, promoted=promoted
         ),
         whiffs=whiffs,
+        arrivals=recent,
     )
 
     captured = prospects.captured_on()

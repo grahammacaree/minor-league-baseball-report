@@ -139,5 +139,67 @@ def transactions(
     return sorted(moves, key=lambda move: (move.effective_date, move.player_name))
 
 
+# Ways a player arrives from outside the organization. Minor-league free agent
+# signings are left out: they are mostly depth, and would bury the case this is
+# here to catch — a ranked prospect arriving between capture points.
+ARRIVAL_TYPES = ("Trade", "Claimed Off Waivers", "Rule 5 Draft", "Selected")
+
+
+def arrivals(
+    parent_org_id: int,
+    season: int,
+    since: date,
+    until: date,
+) -> list[Transaction]:
+    """
+    Players who joined the organization from outside it.
+
+    The rankings are captured twice a year, so a prospect acquired in July is
+    invisible to a list committed in March. This finds the acquisitions; whether
+    any given one is worth following is a question for the rankings.
+
+    A move within the organization has both clubs inside it, and a departure has
+    the destination outside, so comparing the two ends is what separates an
+    arrival from a promotion or a loss.
+    """
+    inside = {team["id"] for team in statsapi.affiliate_teams(parent_org_id, season)}
+    inside.add(parent_org_id)
+
+    def joined_from_outside(raw: dict) -> bool:
+        if raw.get("typeDesc") not in ARRIVAL_TYPES:
+            return False
+        # A trade carries a row for the cash as well as for the players, and
+        # that one names no person.
+        if not raw.get("person", {}).get("id"):
+            return False
+        to_team = (raw.get("toTeam") or {}).get("id")
+        from_team = (raw.get("fromTeam") or {}).get("id")
+        return to_team in inside and from_team not in inside
+
+    seen: set[tuple[int, str]] = set()
+    found: list[Transaction] = []
+    for team_id in sorted(inside):
+        for raw in statsapi.transactions(team_id, since.isoformat(), until.isoformat()):
+            effective = raw.get("effectiveDate") or raw.get("date")
+            if not effective or not joined_from_outside(raw):
+                continue
+            player_id = raw["person"]["id"]
+            key = (player_id, effective)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(
+                Transaction(
+                    player_id=player_id,
+                    player_name=raw.get("person", {}).get("fullName", ""),
+                    effective_date=date.fromisoformat(effective),
+                    type_desc=raw.get("typeDesc", ""),
+                    description=raw.get("description", ""),
+                )
+            )
+
+    return sorted(found, key=lambda a: (a.effective_date, a.player_name))
+
+
 def lookback_window(as_of: date, days: int) -> tuple[date, date]:
     return as_of - timedelta(days=days), as_of

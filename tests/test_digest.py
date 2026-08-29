@@ -5,6 +5,7 @@ from datetime import date
 from mlb_report import digest as digest_module
 from mlb_report.models import GameLog, Transaction
 from mlb_report.prospects import Prospect
+from mlb_report.rankings import Ranked
 
 REPORT_DATE = date(2026, 8, 28)
 
@@ -299,3 +300,53 @@ def test_whiffs_belong_to_one_pitcher_in_one_game():
         whiffs={(4, second.game_pk): 5},
     )
     assert "whiffs" not in all_played(digest)[0]
+
+
+def acquired():
+    transaction = Transaction(
+        player_id=695722,
+        player_name="Boston Smith",
+        effective_date=date(2026, 7, 30),
+        type_desc="Trade",
+        description="Traded to the Seattle Mariners.",
+    )
+    entry = Ranked(
+        player_id=695722,
+        name="Boston Smith",
+        position="C",
+        rank=4,
+        org_name="Chicago White Sox",
+        org_abbreviation="CWS",
+    )
+    return [(transaction, entry)]
+
+
+def test_an_arrival_is_reported_by_where_he_was_ranked():
+    """A club's own top 30 is the closest thing to a verdict on a player."""
+    digest = digest_module.build(
+        report_date=REPORT_DATE,
+        tracked=TOP_FOUR,
+        history=[],
+        moves=[],
+        settings=SETTINGS,
+        arrivals=acquired(),
+    )
+    assert digest.arrivals == ["**C Boston Smith** — CWS No. 4, acquired 30 July"]
+    assert "## New in the system" in digest_module.render(digest)
+
+
+def test_a_new_prospect_is_reason_enough_to_send():
+    digest = digest_module.build(
+        report_date=REPORT_DATE,
+        tracked=TOP_FOUR,
+        history=[],
+        moves=[],
+        settings=SETTINGS,
+        arrivals=acquired(),
+    )
+    assert not digest.is_empty
+
+
+def test_the_arrivals_heading_is_absent_on_a_day_without_one():
+    """An empty heading every day trains the reader to skip it."""
+    assert "New in the system" not in digest_module.render(build())
