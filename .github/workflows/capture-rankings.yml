@@ -38,11 +38,15 @@ jobs:
       # though nothing else in the project does.
       - run: playwright install --with-deps chromium
 
+      # Through the environment rather than into the script, so a dispatched
+      # value is an argument and not an extra command.
       - name: Capture every org's top 30
+        env:
+          SEASON: ${{ inputs.season }}
         run: |
           ARGS=""
-          if [ -n "${{ inputs.season }}" ]; then
-            ARGS="--season ${{ inputs.season }}"
+          if [ -n "$SEASON" ]; then
+            ARGS="--season $SEASON"
           fi
           ./scripts/capture-rankings $ARGS
 
@@ -50,7 +54,9 @@ jobs:
       # judgement call about who this digest follows, and it is worth a glance
       # before it starts changing what lands in the inbox.
       - name: Open a pull request with the new rankings
-        uses: peter-evans/create-pull-request@v6
+        # Pinned to a commit, not a tag: a tag can be moved, and this action
+        # runs in a job that can write to the repository.
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
         with:
           branch: rankings/refresh
           title: "Refresh the Pipeline prospect rankings"

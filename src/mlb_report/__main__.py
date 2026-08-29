@@ -120,7 +120,7 @@ def _deliver(digest, text: str) -> int:
 
     # The sender lands in a header too, so it gets the same look as a recipient.
     if not config_loader.valid_address(env["MAIL_FROM"]):
-        print(f"MAIL_FROM is not a usable address: {env['MAIL_FROM']!r}")
+        print("MAIL_FROM is not a usable address. Check the SMTP secret.")
         return 1
 
     emailer.send(
@@ -134,7 +134,11 @@ def _deliver(digest, text: str) -> int:
         text=text,
         html=emailer.markdown_to_html(text),
     )
-    print(f"Sent to {', '.join(recipients)}")
+    # Counted rather than named. This runs in a public repository, where the
+    # log is readable by anyone and an address printed daily is an address
+    # harvested. Masking does not help: what would be printed is a fragment of
+    # a larger secret, not a value GitHub holds.
+    print(f"Sent to {len(recipients)} recipient(s)")
     return 0
 
 

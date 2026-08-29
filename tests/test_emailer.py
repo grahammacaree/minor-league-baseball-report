@@ -216,6 +216,15 @@ def test_a_night_with_news_is_always_sent(monkeypatch, delivery):
     assert len(delivery) == 1
 
 
+def test_the_log_counts_recipients_without_naming_them(monkeypatch, delivery, capsys):
+    """This runs in a public repository, where the log is readable by anyone."""
+    deliver_with(monkeypatch, {}, moves=["**Optioned** — sent to Everett."])
+
+    printed = capsys.readouterr().out
+    assert "1 recipient" in printed
+    assert "hi@example.com" not in printed
+
+
 def test_a_malformed_sender_stops_the_send(monkeypatch, delivery):
     """The sender lands in a header too."""
     monkeypatch.setattr(

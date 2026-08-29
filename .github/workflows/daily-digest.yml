@@ -41,7 +41,9 @@ jobs:
       # computed from it. Losing it would not break a run, but it would flatten
       # every streak until the store refilled.
       - name: Restore history from the last run
-        uses: dawidd6/action-download-artifact@v6
+        # Pinned to a commit, not a tag: a tag can be moved, and this action
+        # runs in the job that holds the SMTP credentials.
+        uses: dawidd6/action-download-artifact@bf251b5aa9c2f7eeb574a96ee720e24f801b7c11 # v6
         with:
           name: mlb-report-history
           path: ${{ runner.temp }}/mlb-report/data
@@ -70,13 +72,19 @@ jobs:
       - name: Gather play-by-play
         run: ./scripts/gather-pitch-data
 
+      # Inputs arrive through the environment rather than being pasted into the
+      # script, so a value chosen by whoever dispatched the run is data to the
+      # shell rather than more of the command.
       - name: Send digest
+        env:
+          REPORT_DATE: ${{ inputs.report_date }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           ARGS=""
-          if [ -n "${{ inputs.report_date }}" ]; then
-            ARGS="--date ${{ inputs.report_date }}"
+          if [ -n "$REPORT_DATE" ]; then
+            ARGS="--date $REPORT_DATE"
           fi
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
+          if [ "$DRY_RUN" = "true" ]; then
             ARGS="$ARGS --dry-run"
           fi
           ./scripts/run $ARGS
