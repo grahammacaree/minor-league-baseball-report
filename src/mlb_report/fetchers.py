@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from . import pitch_data, statsapi
@@ -59,7 +60,8 @@ def game_logs(
     """
     if levels is None:
         levels = current_levels(prospects, parent_org_id, season)
-    logs: list[GameLog] = []
+
+    wanted = []
     for prospect in prospects:
         sport_id = levels.get(prospect.player_id)
         if prospect.player_id is None or sport_id is None:
@@ -67,11 +69,19 @@ def game_logs(
         if sport_id == MLB_SPORT_ID:
             continue
         group = "pitching" if prospect.is_pitcher else "hitting"
-        splits = statsapi.game_log(prospect.player_id, group, season, sport_id)
-        logs.extend(
-            GameLog.from_split(prospect.player_id, group, split) for split in splits
-        )
-    return logs
+        wanted.append((prospect.player_id, group, sport_id))
+
+    def fetch(request: tuple[int, str, int]) -> list[GameLog]:
+        player_id, group, sport_id = request
+        splits = statsapi.game_log(player_id, group, season, sport_id)
+        return [GameLog.from_split(player_id, group, split) for split in splits]
+
+    # One request per player, fetched concurrently. Thirty players at most of a
+    # second each is otherwise half the run, and they do not depend on one
+    # another. Results keep the order asked in, so the store is written the same
+    # way every day.
+    with ThreadPoolExecutor(pitch_data.WORKERS) as pool:
+        return [log for logs in pool.map(fetch, wanted) for log in logs]
 
 
 def whiffs_for_outings(logs: list[GameLog]) -> dict[tuple[int, int], int]:
@@ -83,16 +93,36 @@ def whiffs_for_outings(logs: list[GameLog]) -> dict[tuple[int, int], int]:
     season-scale pass the park factors need. A game that cannot be read is
     simply left out, and the line reports strikeouts alone.
     """
-    wanted = {log.game_pk for log in logs if log.is_pitching}
-    found: dict[tuple[int, int], int] = {}
-    for game_pk in sorted(wanted):
+    wanted = sorted({log.game_pk for log in logs if log.is_pitching})
+
+    def read(game_pk: int) -> dict[int, int]:
         try:
-            by_pitcher = pitch_data.whiffs_by_pitcher(game_pk)
+            return pitch_data.whiffs_by_pitcher(game_pk)
         except statsapi.StatsApiError:
-            continue
-        for pitcher, whiffs in by_pitcher.items():
-            found[(pitcher, game_pk)] = whiffs
+            return {}
+
+    found: dict[tuple[int, int], int] = {}
+    with ThreadPoolExecutor(pitch_data.WORKERS) as pool:
+        for game_pk, by_pitcher in zip(wanted, pool.map(read, wanted), strict=True):
+            for pitcher, whiffs in by_pitcher.items():
+                found[(pitcher, game_pk)] = whiffs
     return found
+
+
+def _club_transactions(team_ids: list[int], since: date, until: date) -> list[dict]:
+    """
+    The feed for every club in an organization, fetched concurrently.
+
+    Both directions of a move are reported, once by each club involved, so
+    callers deduplicate. Order follows the clubs asked for, which keeps that
+    deduplication deciding the same way each run.
+    """
+
+    def fetch(team_id: int) -> list[dict]:
+        return statsapi.transactions(team_id, since.isoformat(), until.isoformat())
+
+    with ThreadPoolExecutor(pitch_data.WORKERS) as pool:
+        return [row for page in pool.map(fetch, team_ids) for row in page]
 
 
 def transactions(
@@ -114,27 +144,26 @@ def transactions(
 
     seen: set[tuple[int, str, str]] = set()
     moves: list[Transaction] = []
-    for team_id in team_ids:
-        for raw in statsapi.transactions(team_id, since.isoformat(), until.isoformat()):
-            player_id = raw.get("person", {}).get("id")
-            if player_id not in tracked:
-                continue
-            effective = raw.get("effectiveDate") or raw.get("date")
-            if not effective:
-                continue
-            key = (player_id, effective, raw.get("description", ""))
-            if key in seen:
-                continue
-            seen.add(key)
-            moves.append(
-                Transaction(
-                    player_id=player_id,
-                    player_name=raw.get("person", {}).get("fullName", ""),
-                    effective_date=date.fromisoformat(effective),
-                    type_desc=raw.get("typeDesc", ""),
-                    description=raw.get("description", ""),
-                )
+    for raw in _club_transactions(team_ids, since, until):
+        player_id = raw.get("person", {}).get("id")
+        if player_id not in tracked:
+            continue
+        effective = raw.get("effectiveDate") or raw.get("date")
+        if not effective:
+            continue
+        key = (player_id, effective, raw.get("description", ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        moves.append(
+            Transaction(
+                player_id=player_id,
+                player_name=raw.get("person", {}).get("fullName", ""),
+                effective_date=date.fromisoformat(effective),
+                type_desc=raw.get("typeDesc", ""),
+                description=raw.get("description", ""),
             )
+        )
 
     return sorted(moves, key=lambda move: (move.effective_date, move.player_name))
 
@@ -222,22 +251,21 @@ def crossings(
     seen: set[tuple[int, str]] = set()
     joined: list[Transaction] = []
     left: list[Transaction] = []
-    for team_id in sorted(inside):
-        for raw in statsapi.transactions(team_id, since.isoformat(), until.isoformat()):
-            effective = raw.get("effectiveDate") or raw.get("date")
-            if not effective:
-                continue
-            crossing = ends(raw)
-            if crossing is None:
-                continue
-            to_inside, from_inside = crossing
-            if to_inside == from_inside:
-                continue  # internal move, or nothing to do with us
-            key = (raw["person"]["id"], effective)
-            if key in seen:
-                continue
-            seen.add(key)
-            (joined if to_inside else left).append(build(raw, effective))
+    for raw in _club_transactions(sorted(inside), since, until):
+        effective = raw.get("effectiveDate") or raw.get("date")
+        if not effective:
+            continue
+        crossing = ends(raw)
+        if crossing is None:
+            continue
+        to_inside, from_inside = crossing
+        if to_inside == from_inside:
+            continue  # internal move, or nothing to do with us
+        key = (raw["person"]["id"], effective)
+        if key in seen:
+            continue
+        seen.add(key)
+        (joined if to_inside else left).append(build(raw, effective))
 
     def order(move: Transaction) -> tuple[date, str]:
         return move.effective_date, move.player_name

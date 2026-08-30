@@ -5,6 +5,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from functools import cache
 from typing import Any
 
 BASE_URL = "https://statsapi.mlb.com/api/v1"
@@ -67,13 +68,8 @@ def team_short_names(sport_id: int, season: int) -> dict[int, str]:
     }
 
 
-def affiliate_teams(parent_org_id: int, season: int) -> list[dict]:
-    """
-    Minor-league clubs belonging to an organization.
-
-    The teams endpoint accepts a single sportId per call, so each level is a
-    separate request.
-    """
+@cache
+def _affiliate_teams(parent_org_id: int, season: int) -> tuple[dict, ...]:
     teams: list[dict] = []
     for sport_id in AFFILIATE_SPORT_IDS:
         payload = get("teams", sportId=sport_id, season=season)
@@ -82,7 +78,19 @@ def affiliate_teams(parent_org_id: int, season: int) -> list[dict]:
             for team in payload.get("teams", [])
             if team.get("parentOrgId") == parent_org_id
         )
-    return teams
+    return tuple(teams)
+
+
+def affiliate_teams(parent_org_id: int, season: int) -> list[dict]:
+    """
+    Minor-league clubs belonging to an organization.
+
+    The teams endpoint accepts a single sportId per call, so each level is a
+    separate request. Which clubs an organization owns does not change over a
+    run, and three separate parts of the digest need to know, so the answer is
+    kept rather than asked for six requests at a time.
+    """
+    return list(_affiliate_teams(parent_org_id, season))
 
 
 def sport_players(sport_id: int, season: int) -> list[dict]:
