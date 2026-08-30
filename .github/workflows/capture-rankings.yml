@@ -3,10 +3,15 @@ name: Capture prospect rankings
 # Pipeline reworks the org lists in the spring and again after the deadline.
 # These run the morning after each, which is the same pair of dates
 # prospects.py uses to decide a captured list has gone stale.
+#
+# Off the hour, like the digest: scheduled runs are best-effort and are delayed
+# or dropped under load, and the top of the hour is the busiest slot there is.
+# It matters more here than there, because a missed run does not come round
+# again for months.
 on:
   schedule:
-    - cron: "0 14 1 4 *"
-    - cron: "0 14 1 8 *"
+    - cron: "37 14 1 4 *"
+    - cron: "37 14 1 8 *"
   workflow_dispatch:
     inputs:
       season:
