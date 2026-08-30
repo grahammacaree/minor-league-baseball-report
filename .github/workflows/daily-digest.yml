@@ -1,11 +1,15 @@
 name: Daily farm digest
 
-# 13:00 UTC is early morning on the west coast, by which point every affiliate
-# has finished the previous day's game, including the late Pacific Coast League
-# starts. The digest reports on yesterday by default.
+# Early morning on the west coast, by which point every affiliate has finished
+# the previous day's game, including the late Pacific Coast League starts. The
+# digest reports on yesterday by default.
+#
+# Twenty-three minutes past rather than on the hour. Scheduled runs are
+# best-effort and are delayed or dropped when the queue is busy, and the top of
+# the hour is where every cron anyone writes ends up.
 on:
   schedule:
-    - cron: "0 13 * * *"
+    - cron: "23 13 * * *"
   workflow_dispatch:
     inputs:
       report_date:
