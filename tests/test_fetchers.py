@@ -84,6 +84,33 @@ def test_a_caller_editing_the_club_list_does_not_edit_the_next_caller_s(club_lis
     assert [team["id"] for team in again] == [529]
 
 
+@pytest.fixture
+def short_names(monkeypatch):
+    asked = []
+
+    def fake_get(path, **params):
+        asked.append(params.get("sportId"))
+        return {"teams": [{"id": 566, "shortName": "Tacoma", "name": "Tacoma R"}]}
+
+    monkeypatch.setattr(fetchers.statsapi, "get", fake_get)
+    fetchers.statsapi._team_short_names.cache_clear()
+    yield asked
+    fetchers.statsapi._team_short_names.cache_clear()
+
+
+def test_a_level_s_clubs_are_named_once_for_both_pools(short_names):
+    """The hitters and the pitchers at a level play for the same clubs."""
+    for _ in ("hitting", "pitching"):
+        assert fetchers.statsapi.team_short_names(11, 2026) == {566: "Tacoma"}
+
+    assert short_names == [11]
+
+
+def test_a_caller_editing_the_names_does_not_edit_the_next_caller_s(short_names):
+    fetchers.statsapi.team_short_names(11, 2026)[566] = "Somewhere else"
+    assert fetchers.statsapi.team_short_names(11, 2026) == {566: "Tacoma"}
+
+
 def split(day=28, summary="2-4, HR", sport="AAA", game_pk=812345):
     return {
         "date": f"2026-08-{day}",

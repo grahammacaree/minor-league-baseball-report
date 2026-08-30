@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_left
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Protocol
@@ -248,7 +249,10 @@ def load_pools(
     Every player at the given levels, cached for the day.
 
     League distributions move slowly and the leaderboards are large, so one
-    fetch per day is plenty.
+    fetch per day is plenty. The scheduled run pays for that fetch every time,
+    though, because the cache lives beside the day it was written and does not
+    survive to the next one, so the levels are fetched concurrently: six of
+    them, two leaderboards each, and no level waiting on the one before it.
     """
     path = _cache_path(season, group)
     if path.exists():
@@ -264,9 +268,15 @@ def load_pools(
         except (json.JSONDecodeError, KeyError, TypeError):
             pass
 
+    def fetch(sport_id: int) -> list[PlayerSeason]:
+        return fetch_pool(sport_id, season, group)
+
+    # Ordered by level however they arrive, so the cache written from this is
+    # byte-identical whichever level finishes first.
     pool: list[PlayerSeason] = []
-    for sport_id in sport_ids:
-        pool.extend(fetch_pool(sport_id, season, group))
+    with ThreadPoolExecutor(pitch_data.WORKERS) as executor:
+        for rows in executor.map(fetch, sport_ids):
+            pool.extend(rows)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
