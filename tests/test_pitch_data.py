@@ -5,10 +5,14 @@ import pytest
 from mlb_report import pitch_data
 
 
-def pitch(description, is_pitch=True, hit_data=None):
+def pitch(description, is_pitch=True, hit_data=None, zone=None, speed=None):
     event = {"isPitch": is_pitch, "details": {"description": description}}
     if hit_data:
         event["hitData"] = hit_data
+    if zone is not None:
+        event["pitchData"] = {"zone": zone}
+    if speed is not None:
+        event.setdefault("hitData", {})["launchSpeed"] = speed
     return event
 
 
@@ -144,6 +148,126 @@ def test_rates_are_none_without_a_denominator():
     assert rates["called_strikes"] is None
     assert rates["ground_balls"] is None
     assert rates["pull"] is None
+
+
+def test_a_swing_at_a_pitch_outside_the_zone_is_a_chase(monkeypatch):
+    result = parse(
+        {
+            "allPlays": [
+                play(
+                    "top",
+                    pitch("Swinging Strike", zone=13),
+                    pitch("Ball", zone=14),
+                    pitch("Swinging Strike", zone=5),
+                )
+            ]
+        },
+        monkeypatch,
+    )
+    assert result[20]["out_of_zone"] == 2
+    assert result[20]["chases"] == 1
+
+
+def test_a_level_that_tracks_nothing_reports_no_chase_rate(monkeypatch):
+    """Below Triple-A no pitch carries a zone, and a rate of nothing is absent."""
+    result = parse({"allPlays": [play("top", "Swinging Strike", "Ball")]}, monkeypatch)
+    assert result[20]["out_of_zone"] == 0
+    assert pitch_data.rates(result[20])["chases"] is None
+
+
+def test_exit_velocity_is_totalled_so_it_can_be_averaged(monkeypatch):
+    result = parse(
+        {
+            "allPlays": [
+                play(
+                    "top",
+                    pitch("In play, out(s)", speed=100.0),
+                    pitch("In play, no out", speed=80.0),
+                )
+            ]
+        },
+        monkeypatch,
+    )
+    assert result[20]["measured"] == 2
+    assert pitch_data.rates(result[20])["exit_speed"] == pytest.approx(90.0)
+
+
+def test_a_ball_hit_hard_enough_is_counted_apart(monkeypatch):
+    result = parse(
+        {
+            "allPlays": [
+                play(
+                    "top",
+                    pitch("In play, out(s)", speed=pitch_data.HARD_HIT_MPH),
+                    pitch("In play, out(s)", speed=pitch_data.HARD_HIT_MPH - 0.1),
+                )
+            ]
+        },
+        monkeypatch,
+    )
+    assert result[20]["hard_hit"] == 1
+
+
+def test_an_untracked_ball_in_play_adds_nothing_to_the_average(monkeypatch):
+    """One measured ball and one unmeasured must not average to half its speed."""
+    result = parse(
+        {
+            "allPlays": [
+                play(
+                    "top",
+                    pitch("In play, out(s)", speed=100.0),
+                    pitch("In play, out(s)"),
+                )
+            ]
+        },
+        monkeypatch,
+    )
+    assert result[20]["measured"] == 1
+    assert pitch_data.rates(result[20])["exit_speed"] == pytest.approx(100.0)
+
+
+def test_a_cache_from_an_older_shape_is_cleared_away(monkeypatch, tmp_path):
+    """Otherwise it rides along in the artifact that carries the cache."""
+    monkeypatch.setattr(pitch_data, "user_data_dir", lambda: tmp_path)
+    stale = tmp_path / f"pitch_v{pitch_data.SCHEMA - 1}_11_2026.json"
+    stale.write_text("{}", encoding="utf-8")
+    current = tmp_path / f"pitch_v{pitch_data.SCHEMA}_11_2026.json"
+    current.write_text("{}", encoding="utf-8")
+    other = tmp_path / f"pitch_v{pitch_data.SCHEMA - 1}_12_2026.json"
+    other.write_text("{}", encoding="utf-8")
+
+    removed = pitch_data.discard_old_schemas(11, 2026)
+
+    assert removed == [stale.name]
+    assert current.exists()
+    # A different level's cache is not this run's to tidy up.
+    assert other.exists()
+
+
+def test_both_men_are_credited_with_the_chase_and_the_contact(monkeypatch):
+    """A chase is the hitter's lapse and the pitcher's doing at once."""
+    monkeypatch.setattr(
+        pitch_data.statsapi,
+        "get",
+        lambda *a, **k: {
+            "allPlays": [
+                play(
+                    "top",
+                    pitch("Swinging Strike", zone=13),
+                    pitch("In play, out(s)", speed=101.0),
+                    batter=7,
+                    pitcher=9,
+                )
+            ]
+        },
+    )
+    parsed = pitch_data.parse_game(1, SIDES)
+    for side, player in (("batters", 7), ("pitchers", 9)):
+        counts = parsed[side][player]
+        assert counts["chases"] == 1
+        assert counts["out_of_zone"] == 1
+        assert counts["measured"] == 1
+        assert counts["exit_speed_total"] == pytest.approx(101.0)
 
 
 def test_by_club_counts_both_sides_in_every_game():

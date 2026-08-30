@@ -6,10 +6,21 @@ built in [`baselines.py`](../src/mlb_report/baselines.py).
 
 ## What the data can and cannot support
 
-There is no Statcast in the minor leagues. No exit velocity, no launch angle, no
-bat speed. Anything describing contact quality here is inferred from the
-batted-ball mix and isolated power, and should be read as evidence rather than
-measurement.
+Tracking stops at Triple-A. Those parks record exit velocity and launch angle on
+97% of batted balls and a location and zone on every pitch; Double-A, High-A and
+Single-A record none of the four. Below Triple-A, then, anything describing
+contact quality is inferred from the batted-ball mix and isolated power, and
+should be read as evidence rather than measurement.
+
+This makes the level boundary the sharpest edge in the digest. Chase rate and
+exit velocity are reported for Triple-A players and are simply absent for
+everyone below, so a promotion from Double-A gains two bars and a demotion loses
+them. No percentile in those two crosses the boundary, and neither should be
+read as a player changing.
+
+Landing coordinates are the exception: every full-season level records where a
+batted ball came down, which is why spray direction is available throughout
+while the speed it left the bat at is not.
 
 What the API does provide, via `stats=seasonAdvanced` (verified populated for
 every affiliate level): swings, swinging strikes, balls in play, and hits and
