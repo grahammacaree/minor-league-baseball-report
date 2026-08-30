@@ -1,0 +1,50 @@
+name: Digest watchdog
+
+# A digest that fails is noisy: the run goes red and GitHub says so. A digest
+# that never starts is silent, because there is no run to report anything, and
+# the first sign of it is an email that did not arrive. Scheduled runs are
+# best-effort, so that is a thing which happens rather than a thing which might.
+#
+# This asks the opposite question once a day: not "did the run fail" but "was
+# there a run at all". Missing one is a failure here, which is loud.
+on:
+  schedule:
+    # Two hours after the digest, leaving room for it to be late rather than
+    # absent, and off the hour for the same reason the digest is.
+    - cron: "41 15 * * *"
+  workflow_dispatch:
+
+# Reading its own run history is the whole job. Nothing is checked out and
+# nothing is written.
+permissions:
+  actions: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Look for a digest since yesterday
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # A dispatched run counts. It sends the same email, and the question
+          # being asked is whether the digest went out, not how it was started.
+          latest=$(gh api "repos/${REPO}/actions/workflows/daily-digest.yml/runs?per_page=30" \
+            --jq '[.workflow_runs[] | select(.conclusion == "success")] | first | .created_at // empty')
+
+          cutoff=$(date -u -d '25 hours ago' +%s)
+
+          if [ -z "$latest" ]; then
+            echo "::error::No successful digest run on record. Nothing has been emailed."
+            exit 1
+          fi
+
+          if [ "$(date -u -d "$latest" +%s)" -lt "$cutoff" ]; then
+            echo "::error::Last successful digest was $latest, over a day ago. Check whether the schedule is firing."
+            exit 1
+          fi
+
+          echo "Last successful digest: $latest" >> "$GITHUB_STEP_SUMMARY"
