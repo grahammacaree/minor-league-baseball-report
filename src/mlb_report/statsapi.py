@@ -52,6 +52,16 @@ def get(path: str, **params: Any) -> dict:
     raise StatsApiError(f"GET {url} failed: {last_error}")
 
 
+@cache
+def _team_short_names(sport_id: int, season: int) -> tuple[tuple[int, str], ...]:
+    teams = get("teams", sportId=sport_id, season=season).get("teams", [])
+    return tuple(
+        (team["id"], team.get("shortName") or team.get("name", ""))
+        for team in teams
+        if team.get("id")
+    )
+
+
 def team_short_names(sport_id: int, season: int) -> dict[int, str]:
     """
     Club id to its short name, e.g. 566 to "Tacoma".
@@ -59,13 +69,11 @@ def team_short_names(sport_id: int, season: int) -> dict[int, str]:
     The leaderboards carry only the full "Tacoma Rainiers". The short form is
     what belongs beside a level, where the club is being named to tell two
     stints apart rather than introduced.
+
+    Kept for the run, because the hitters and the pitchers at a level play for
+    the same clubs and each pool would otherwise ask again.
     """
-    teams = get("teams", sportId=sport_id, season=season).get("teams", [])
-    return {
-        team["id"]: team.get("shortName") or team.get("name", "")
-        for team in teams
-        if team.get("id")
-    }
+    return dict(_team_short_names(sport_id, season))
 
 
 @cache
