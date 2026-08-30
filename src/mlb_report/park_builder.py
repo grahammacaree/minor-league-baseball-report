@@ -230,6 +230,10 @@ def _pitch_sample(component: str, totals: dict[str, int]) -> int:
         return totals["pitches"] - totals["swings"]
     if component == "ground_balls":
         return sum(totals[field] for field in pitch_data.TRAJECTORY_FIELDS)
+    if component == "chases":
+        return totals["out_of_zone"]
+    if component == "exit_speed":
+        return totals["measured"]
     return sum(totals[field] for field in pitch_data.SPRAY_FIELDS)
 
 
@@ -240,12 +244,14 @@ def pitch_factors(
     home_of: dict[int, int] | None = None,
 ) -> dict[int, dict[int, dict[str, float]]]:
     """
-    Whiff, called-strike, ground-ball and pull factors, if play-by-play has
-    been gathered.
+    Whiff, called-strike, ground-ball, pull, chase and exit-speed factors, if
+    play-by-play has been gathered.
 
     Same construction as the rest: the home club's games, both sides, here
     against elsewhere. Returns nothing when the season has not been fetched,
-    since these components are optional rather than required.
+    since these components are optional rather than required. A component the
+    level does not measure is skipped per park rather than defaulted, so the
+    lower levels produce four factors where Triple-A produces six.
     """
     games = pitch_data.load_cached(sport_id, season)
     if not games:

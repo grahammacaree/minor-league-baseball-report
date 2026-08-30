@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mlb_report import park, park_builder
+from mlb_report import park, park_builder, pitch_data
 from mlb_report.park_builder import Totals
 
 
@@ -165,6 +165,58 @@ def test_a_club_with_no_road_games_is_dropped(monkeypatch):
         lambda *_: ({1: {100: {"plateAppearances": 40}}}, {1: {"league": {"id": 109}}}),
     )
     assert park_builder.collect(12, 2025) == {}
+
+
+def game(home, away, home_counts, away_counts):
+    def totals(counts):
+        blank = pitch_data._blank()
+        blank.update(counts)
+        return blank
+
+    return {home: totals(home_counts), away: totals(away_counts)}
+
+
+def test_a_tracked_level_gets_a_chase_and_exit_speed_factor(monkeypatch):
+    """
+    Both are built exactly like the others: home club, both sides, here
+    against elsewhere. A park where visitors chase more is a park where its
+    own hitters chase more, and only the park is left in the ratio.
+    """
+    # Club 1 hosts, then visits. Chases and exit speed both run high at home.
+    games = {
+        100: {"clubs": game(1, 2, {"out_of_zone": 5000, "chases": 1500,
+                                   "measured": 5000, "exit_speed_total": 450000},
+                            {"out_of_zone": 5000, "chases": 1500,
+                             "measured": 5000, "exit_speed_total": 450000})},
+        200: {"clubs": game(2, 1, {"out_of_zone": 5000, "chases": 1250,
+                                   "measured": 5000, "exit_speed_total": 435000},
+                            {"out_of_zone": 5000, "chases": 1250,
+                             "measured": 5000, "exit_speed_total": 435000})},
+    }
+    monkeypatch.setattr(park_builder.pitch_data, "load_cached", lambda *_: games)
+
+    by_league = park_builder.pitch_factors(11, 2025, {1: 112, 2: 112}, {100: 1, 200: 2})
+
+    assert by_league[112][1]["chases"] > 1.0
+    assert by_league[112][1]["exit_speed"] > 1.0
+    assert by_league[112][2]["chases"] < 1.0
+
+
+def test_a_level_that_tracks_nothing_gets_neither_factor(monkeypatch):
+    """Double-A still earns its whiff factor; it just has no chase to measure."""
+    games = {
+        100: {"clubs": game(1, 2, {"pitches": 3000, "swings": 1500, "whiffs": 400},
+                            {"pitches": 3000, "swings": 1500, "whiffs": 400})},
+        200: {"clubs": game(2, 1, {"pitches": 3000, "swings": 1500, "whiffs": 300},
+                            {"pitches": 3000, "swings": 1500, "whiffs": 300})},
+    }
+    monkeypatch.setattr(park_builder.pitch_data, "load_cached", lambda *_: games)
+
+    by_league = park_builder.pitch_factors(12, 2025, {1: 112, 2: 112}, {100: 1, 200: 2})
+
+    assert "whiffs" in by_league[112][1]
+    assert "chases" not in by_league[112][1]
+    assert "exit_speed" not in by_league[112][1]
 
 
 def test_parks_in_different_leagues_normalize_separately():
