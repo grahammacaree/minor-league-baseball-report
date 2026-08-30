@@ -220,3 +220,46 @@ sense. The rookie and complex leagues have no park factors, because a shared
 back-field is not really a park and the schedules are too short to measure one.
 And altitude moves called strikes for reasons nobody has explained, which is
 worth understanding before the called-strike factor carries much weight.
+
+## Where exit velocity should end up
+
+Average exit velocity is the wrong summary of a hitter's contact quality, and is
+used here because it is the one the current cache can produce. A mean is dragged
+around by mishits, which say more about the pitch than the hitter; the top decile
+of a hitter's batted balls describes what he is capable of when he connects, and
+separates hitters more sharply and sooner. The same argument applies to a pitcher
+from the other end, where it is the damage he allows at his worst.
+
+Switching costs a cache change rather than a rewrite. Only a running sum and a
+count are stored per player per game, which cannot produce any percentile.
+Keeping a small histogram instead — batted balls counted into one-mile-per-hour
+bins — supports the 90th percentile, the mean and the hard-hit rate together,
+stays about as compact as the three numbers it replaces, and needs no second
+pass over the season. Whichever summary is chosen, the park factor has to be
+built from the same one, since a factor measured on means cannot adjust a decile.
+
+## Toward projection
+
+The digest measures what a prospect has done. Estimating what he will do is a
+different problem, and enough of its inputs now exist to say what it would take
+rather than only that it would be nice.
+
+What is already here: an append-only store of every game log, league baselines
+that make a rate comparable across levels, park factors per league-season, and
+top-thirty rankings for all thirty organizations. That last piece is why the
+same framework would extend to any club without new plumbing — the tracked list
+is the only Mariners-specific thing in the project.
+
+The binding constraint is labels, not features. A projection model learns from
+prospects whose outcomes are known, which means cohorts old enough to have had
+major-league careers. Triple-A tracking begins in 2023, so any model using exit
+velocity or chase rate has three cohorts, none of whom have finished arriving.
+A model trained on what the lower levels record — the batted-ball mix, the
+plate skills, age relative to level — can reach back much further, and would
+have to, which means the tracked measurements are the least usable inputs
+despite being the best ones.
+
+That suggests the honest first step is not a network but a store: keep the
+season pools rather than caching them for a day, so the training set accumulates
+from now on instead of being reconstructed later from an API that does not
+promise to keep serving old seasons.
