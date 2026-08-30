@@ -3,7 +3,10 @@
 
 # Development
 pytest>=8,<9
-ruff>=0.6,<1
+# Held to one minor version, because CI checks formatting as well as lint and
+# the formatter is free to restyle code between minor releases. A wider range
+# would let a new ruff fail a pull request that changed nothing.
+ruff>=0.16.5,<0.17
 
 # Capturing the Pipeline rankings, twice a year. mlb.com serves five prospects
 # to a non-browser client and the rest only after a click, so that one job

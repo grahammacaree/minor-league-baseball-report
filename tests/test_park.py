@@ -167,13 +167,21 @@ def test_a_club_with_no_road_games_is_dropped(monkeypatch):
     assert park_builder.collect(12, 2025) == {}
 
 
-def game(home, away, home_counts, away_counts):
-    def totals(counts):
+def game(home, away, **counts):
+    """
+    One game, with the same line credited to both clubs.
+
+    A factor is built from what happened at the park rather than from who did
+    it, so what separates these fixtures is the game and not the two halves of
+    it.
+    """
+
+    def totals():
         blank = pitch_data._blank()
         blank.update(counts)
         return blank
 
-    return {home: totals(home_counts), away: totals(away_counts)}
+    return {"clubs": {home: totals(), away: totals()}}
 
 
 def test_a_tracked_level_gets_a_chase_and_exit_speed_factor(monkeypatch):
@@ -184,14 +192,12 @@ def test_a_tracked_level_gets_a_chase_and_exit_speed_factor(monkeypatch):
     """
     # Club 1 hosts, then visits. Chases and exit speed both run high at home.
     games = {
-        100: {"clubs": game(1, 2, {"out_of_zone": 5000, "chases": 1500,
-                                   "measured": 5000, "exit_speed_total": 450000},
-                            {"out_of_zone": 5000, "chases": 1500,
-                             "measured": 5000, "exit_speed_total": 450000})},
-        200: {"clubs": game(2, 1, {"out_of_zone": 5000, "chases": 1250,
-                                   "measured": 5000, "exit_speed_total": 435000},
-                            {"out_of_zone": 5000, "chases": 1250,
-                             "measured": 5000, "exit_speed_total": 435000})},
+        100: game(
+            1, 2, out_of_zone=5000, chases=1500, measured=5000, exit_speed_total=450000
+        ),
+        200: game(
+            2, 1, out_of_zone=5000, chases=1250, measured=5000, exit_speed_total=435000
+        ),
     }
     monkeypatch.setattr(park_builder.pitch_data, "load_cached", lambda *_: games)
 
@@ -205,10 +211,8 @@ def test_a_tracked_level_gets_a_chase_and_exit_speed_factor(monkeypatch):
 def test_a_level_that_tracks_nothing_gets_neither_factor(monkeypatch):
     """Double-A still earns its whiff factor; it just has no chase to measure."""
     games = {
-        100: {"clubs": game(1, 2, {"pitches": 3000, "swings": 1500, "whiffs": 400},
-                            {"pitches": 3000, "swings": 1500, "whiffs": 400})},
-        200: {"clubs": game(2, 1, {"pitches": 3000, "swings": 1500, "whiffs": 300},
-                            {"pitches": 3000, "swings": 1500, "whiffs": 300})},
+        100: game(1, 2, pitches=3000, swings=1500, whiffs=400),
+        200: game(2, 1, pitches=3000, swings=1500, whiffs=300),
     }
     monkeypatch.setattr(park_builder.pitch_data, "load_cached", lambda *_: games)
 

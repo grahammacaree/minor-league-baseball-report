@@ -448,9 +448,7 @@ def test_a_tracked_level_adds_two_bars_to_the_five(monkeypatch):
         "BB%",
         "Chase%\u2193",
     ]
-    assert len([skill.name for skill in evaluation.evaluate(
-        player(), baseline(), 50
-    ).skills]) == 5
+    assert len(evaluation.evaluate(player(), baseline(), 50).skills) == 5
 
 
 def test_exit_velocity_is_reported_in_the_unit_it_was_measured_in():
