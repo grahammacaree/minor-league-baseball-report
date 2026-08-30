@@ -263,3 +263,46 @@ That suggests the honest first step is not a network but a store: keep the
 season pools rather than caching them for a day, so the training set accumulates
 from now on instead of being reconstructed later from an API that does not
 promise to keep serving old seasons.
+
+### What would have to be acquired
+
+Three things, none of which exist here and all of which are reachable with the
+client already in the repo — `sportId=1` returns major-league schedules and
+season pools for seasons as old as 2015, checked rather than assumed.
+
+**Major-league outcomes**, which are the labels: what the prospects of past
+years actually became.
+
+**A major-league run environment**, so those outcomes are comparable across
+years and parks. This does not need componentising the way the minor-league
+factors are. Components exist here because skills are reported individually and
+each has to be adjusted against its own measurement; a label is a single number,
+and a runs factor applied to hitting and pitching is enough.
+
+**Past minor-league seasons**, which are the features. Season-level stats
+backfill cheaply. The play-by-play behind the batted-ball and tracked skills
+does not: it is one request per game, so a decade across the four full-season
+levels is on the order of a hundred thousand requests against an unauthenticated
+public API. Any model reaching back more than a few years is therefore trained
+on season-feed inputs, whatever the recent cohorts have available.
+
+### What it could not project
+
+Hitting and pitching, and nothing else. Nothing in this data supports a
+defensive measure: there is no fielding location, no route or reaction data, and
+outs recorded by position say more about where a club put a player than about
+how well he played there.
+
+The consequence lands on the label rather than the feature list, which is the
+easy mistake. A model trained to predict WAR would be asked to predict something
+its inputs cannot see, and would learn to attribute defensive value to batting
+lines. It would look accurate across a whole cohort and be wrong in a specific,
+predictable direction: worst on exactly the glove-first shortstops and catchers
+whose value is least visible in a slash line. The label therefore has to be an
+offence-only measure — runs above average from the bat, and a run-prevention
+figure for pitchers — and the output has to be named for what it is.
+
+That also fixes what such a system could never do, which is compare across
+positions. A shortstop and a first baseman with identical bats are not
+identically valuable, and the difference between them is precisely the part
+this data does not hold.
