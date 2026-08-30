@@ -39,7 +39,19 @@ BOX_COMPONENTS = (
 # factor imports zone variation that has nothing to do with it. Trajectory and
 # spray have no box-score equivalent at all: a scorer's ground ball and a hitter's
 # pulled ball are only ever recorded pitch by pitch.
-PITCH_COMPONENTS = ("whiffs", "called_strikes", "ground_balls", "pull")
+#
+# Chase and exit speed exist only where a park tracks pitch location and ball
+# speed, which today means Triple-A. A league without tracking simply produces
+# no factor for them, the same way a season with no play-by-play produces none
+# of these at all.
+PITCH_COMPONENTS = (
+    "whiffs",
+    "called_strikes",
+    "ground_balls",
+    "pull",
+    "chases",
+    "exit_speed",
+)
 
 COMPONENTS = BOX_COMPONENTS + PITCH_COMPONENTS
 
