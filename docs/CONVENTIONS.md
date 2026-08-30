@@ -220,3 +220,118 @@ sense. The rookie and complex leagues have no park factors, because a shared
 back-field is not really a park and the schedules are too short to measure one.
 And altitude moves called strikes for reasons nobody has explained, which is
 worth understanding before the called-strike factor carries much weight.
+
+## Where exit velocity should end up
+
+Average exit velocity is the wrong summary of a hitter's contact quality, and is
+used here because it is the one the current cache can produce. A mean is dragged
+around by mishits, which say more about the pitch than the hitter; the top decile
+of a hitter's batted balls describes what he is capable of when he connects, and
+separates hitters more sharply and sooner. The same argument applies to a pitcher
+from the other end, where it is the damage he allows at his worst.
+
+Switching costs a cache change rather than a rewrite. Only a running sum and a
+count are stored per player per game, which cannot produce any percentile.
+Keeping a small histogram instead — batted balls counted into one-mile-per-hour
+bins — supports the 90th percentile, the mean and the hard-hit rate together,
+stays about as compact as the three numbers it replaces, and needs no second
+pass over the season. Whichever summary is chosen, the park factor has to be
+built from the same one, since a factor measured on means cannot adjust a decile.
+
+## Toward projection
+
+The digest measures what a prospect has done. Estimating what he will do is a
+different problem, and enough of its inputs now exist to say what it would take
+rather than only that it would be nice.
+
+What is already here: an append-only store of every game log, league baselines
+that make a rate comparable across levels, park factors per league-season, and
+top-thirty rankings for all thirty organizations. That last piece is why the
+same framework would extend to any club without new plumbing — the tracked list
+is the only Mariners-specific thing in the project.
+
+The binding constraint is labels, not features. A projection model learns from
+prospects whose outcomes are known, which means cohorts old enough to have had
+major-league careers. Triple-A tracking begins in 2023, so any model using exit
+velocity or chase rate has three cohorts, none of whom have finished arriving.
+A model trained on what the lower levels record — the batted-ball mix, the
+plate skills, age relative to level — can reach back much further, and would
+have to, which means the tracked measurements are the least usable inputs
+despite being the best ones.
+
+That suggests the honest first step is not a network but a store: keep the
+season pools rather than caching them for a day, so the training set accumulates
+from now on instead of being reconstructed later from an API that does not
+promise to keep serving old seasons.
+
+### What would have to be acquired
+
+Three things, none of which exist here and all of which are reachable with the
+client already in the repo — `sportId=1` returns major-league schedules and
+season pools for seasons as old as 2015, checked rather than assumed.
+
+**Major-league outcomes**, which are the labels: what the prospects of past
+years actually became.
+
+**A major-league run environment**, so those outcomes are comparable across
+years and parks. This does not need componentising the way the minor-league
+factors are. Components exist here because skills are reported individually and
+each has to be adjusted against its own measurement; a label is a single number,
+and a runs factor applied to hitting and pitching is enough.
+
+**Past minor-league seasons**, which are the features. Season-level stats
+backfill cheaply. The play-by-play behind the batted-ball and tracked skills
+does not: it is one request per game, so a decade across the four full-season
+levels is on the order of a hundred thousand requests against an unauthenticated
+public API. Any model reaching back more than a few years is therefore trained
+on season-feed inputs, whatever the recent cohorts have available.
+
+### What it could not project
+
+Hitting and pitching, and nothing else. Nothing in this data supports a
+defensive measure: there is no fielding location, no route or reaction data, and
+outs recorded by position say more about where a club put a player than about
+how well he played there.
+
+The consequence lands on the label rather than the feature list, which is the
+easy mistake. A model trained to predict WAR would be asked to predict something
+its inputs cannot see, and would learn to attribute defensive value to batting
+lines. It would look accurate across a whole cohort and be wrong in a specific,
+predictable direction: worst on exactly the glove-first shortstops and catchers
+whose value is least visible in a slash line. The label therefore has to be an
+offence-only measure — wRC+ for hitters, already computed here and already
+adjusted for park and league, and a run-prevention figure for pitchers — and the
+output has to be named for what it is.
+
+Comparing across positions is still available, because a positional adjustment
+is a scarcity term rather than a defensive valuation: it prices how hard the
+position is to fill, and applies from the position a player occupies without any
+claim about how well he plays it. A shortstop and a first baseman with identical
+bats can therefore be ranked against each other. What stays invisible is the
+variation within a position — this shortstop against that one — which is the
+residual the data genuinely does not hold.
+
+The adjustment does reintroduce a defensive judgement through the input, which
+is worth being explicit about because it is quiet. Applying it to a prospect
+means assuming the position he will occupy in the majors, and prospects sliding
+down the defensive spectrum is among the most common developmental outcomes
+there is. Taking the organization's current listing at face value would quietly
+credit every shortstop with shortstop scarcity, including the ones who will not
+be shortstops. The honest treatment is to carry that as an assumption stated
+alongside the projection rather than as a number folded into it.
+
+Injury is further out of reach than defence, and worth naming because the digest
+reports injured-list moves and the temptation is obvious. What is here is the
+outcome with none of the mechanism: no kinematics, no kinetics, no workload
+beyond counts of pitches and appearances, nothing medical. The label is poor as
+well — placements are frequently undisclosed, the list is used for roster
+management, dates are backdated and severity is invisible — so a model would be
+fitting a rare, censored, noisily-labelled event against features with no causal
+contact with it. Durability as an observed outcome is reportable: days on the
+list, gaps between appearances, games played. Anticipating the next one is not.
+
+One more shape question follows from choosing wRC+: it is a rate, so a model
+trained on it projects quality and says nothing about how much of it there will
+be. Value needs playing time as well, which is a second and largely unrelated
+problem — durability and opportunity rather than skill — and is better modelled
+separately than smuggled into a rate.
