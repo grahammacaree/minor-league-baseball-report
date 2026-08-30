@@ -37,6 +37,20 @@ def test_weights_are_renormalized_over_missing_seasons():
     assert blended[529]["runs"] == pytest.approx(1.20)
 
 
+def test_a_component_younger_than_the_window_is_not_dragged_toward_neutral():
+    """
+    Tracking arrives at a level long after the seasons behind it were played,
+    so a component can exist in one season of three. Renormalising per
+    component is what keeps its first year from being two-thirds absent data.
+    """
+    seasons = [season(1.10), season(1.10), season(1.10)]
+    seasons[0]["529"]["pull"] = 1.06
+
+    blended = park.blend(seasons)
+    assert blended[529]["pull"] == pytest.approx(1.06)
+    assert blended[529]["runs"] == pytest.approx(1.10)
+
+
 def test_blend_of_nothing_is_empty():
     assert park.blend([]) == {}
 

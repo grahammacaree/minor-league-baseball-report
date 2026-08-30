@@ -14,9 +14,14 @@ but it is the only club-level source for a ground-ball park factor. Spray
 direction has no season-stat equivalent at all, so pull rate can only be
 measured here.
 
+Triple-A parks add tracked pitch location and exit velocity, which nothing
+below them records. Those are counted the same way at every level, so a
+Double-A game simply arrives with none of them and the rates built on them are
+reported as absent rather than as zero.
+
 Play-by-play is expensive — one request per game — so results are aggregated to
-a few numbers per game and cached. Fetching happens once per completed season,
-never in the daily digest.
+a few numbers per game and cached. Games already held are skipped, which makes
+the first pass over a season a backfill and every pass after it a day's games.
 """
 
 from __future__ import annotations
@@ -42,13 +47,29 @@ SWING_FIELDS = ("pitches", "swings", "whiffs", "called_strikes")
 TRAJECTORY_FIELDS = ("ground", "line", "fly", "pop")
 SPRAY_FIELDS = ("pull", "center", "oppo")
 
-FIELDS = SWING_FIELDS + TRAJECTORY_FIELDS + SPRAY_FIELDS
+# Tracked pitch location and exit velocity, which only Triple-A parks are
+# equipped for. Every level is counted the same way; the lower ones simply
+# arrive at zero, and a rate over an empty denominator is reported as absent
+# rather than as a rate of nothing.
+ZONE_FIELDS = ("out_of_zone", "chases")
+CONTACT_FIELDS = ("measured", "exit_speed_total", "hard_hit")
+
+FIELDS = SWING_FIELDS + TRAJECTORY_FIELDS + SPRAY_FIELDS + ZONE_FIELDS + CONTACT_FIELDS
 
 # Players carry the batted-ball half of the line. Trajectory is recorded here
 # rather than read from the season feed, whose ground and air counts are built
 # from outs and so miss every ball that fell in: a hitter's grounders through
 # the infield are exactly the ones a ground-ball rate should be counting.
-PLAYER_FIELDS = TRAJECTORY_FIELDS + SPRAY_FIELDS
+PLAYER_FIELDS = TRAJECTORY_FIELDS + SPRAY_FIELDS + ZONE_FIELDS + CONTACT_FIELDS
+
+# Zones 1 through 9 are the strike zone; anything above is outside it. This is
+# the tracked zone rather than the umpire's, so a chase is a swing at a pitch
+# that really was a ball, not one that was called one.
+LAST_ZONE_IN_STRIKE_ZONE = 9
+
+# Balls at or above this leave the bat hard enough to be worth counting
+# separately. Inherited from the majors; see docs/CONVENTIONS.md.
+HARD_HIT_MPH = 95.0
 
 TRAJECTORIES = {
     "ground_ball": "ground",
@@ -109,14 +130,29 @@ def game_sides(sport_id: int, season: int) -> dict[int, dict[str, int]]:
     return sides
 
 
+def swung_at(event: dict) -> bool:
+    description = (event.get("details", {}).get("description") or "").lower()
+    return any(
+        token in description
+        for token in ("swinging strike", "foul", "in play", "missed bunt")
+    )
+
+
+def count_zone(totals: dict[str, int], event: dict) -> None:
+    """Add one pitch to the chase tally, where a park tracked its location."""
+    zone = (event.get("pitchData") or {}).get("zone")
+    if zone is None or zone <= LAST_ZONE_IN_STRIKE_ZONE:
+        return
+    totals["out_of_zone"] += 1
+    if swung_at(event):
+        totals["chases"] += 1
+
+
 def count_pitch(totals: dict[str, int], event: dict) -> None:
     """Classify one pitch into the swing outcomes, in place."""
     description = (event.get("details", {}).get("description") or "").lower()
     totals["pitches"] += 1
-    if any(
-        token in description
-        for token in ("swinging strike", "foul", "in play", "missed bunt")
-    ):
+    if swung_at(event):
         totals["swings"] += 1
     # A foul tip is a whiff by convention: the bat did not change the ball's
     # path enough to put it in play.
@@ -124,6 +160,18 @@ def count_pitch(totals: dict[str, int], event: dict) -> None:
         totals["whiffs"] += 1
     elif "called strike" in description:
         totals["called_strikes"] += 1
+    count_zone(totals, event)
+
+
+def count_contact(totals: dict[str, int], event: dict) -> None:
+    """Add one batted ball's exit velocity, where a park measured it."""
+    speed = (event.get("hitData") or {}).get("launchSpeed")
+    if not speed:
+        return
+    totals["measured"] += 1
+    totals["exit_speed_total"] += speed
+    if speed >= HARD_HIT_MPH:
+        totals["hard_hit"] += 1
 
 
 def whiffs_by_pitcher(game_pk: int) -> dict[int, int]:
@@ -173,6 +221,18 @@ def parse_game(game_pk: int, sides: dict[str, int]) -> dict:
             if not event.get("isPitch"):
                 continue
             count_pitch(totals, event)
+            count_contact(totals, event)
+
+            # Both men are credited with the same pitch, read from opposite
+            # ends: a chase is the hitter's lapse and the pitcher's doing, and
+            # the exit velocity is the hitter's contact and the pitcher's
+            # damage allowed.
+            for lookup, player in ((batters, batter), (pitchers, pitcher)):
+                if not player:
+                    continue
+                theirs = lookup.setdefault(player, _blank(PLAYER_FIELDS))
+                count_zone(theirs, event)
+                count_contact(theirs, event)
 
             hit = event.get("hitData") or {}
             coords = hit.get("coordinates") or {}
@@ -201,11 +261,29 @@ def parse_game(game_pk: int, sides: dict[str, int]) -> dict:
 
 # Bumped when the parsed shape changes. An older file is simply ignored, which
 # costs a refetch but never mixes two shapes in one calculation.
-SCHEMA = 3
+SCHEMA = 4
 
 
 def _cache_path(sport_id: int, season: int):
     return user_data_dir() / f"pitch_v{SCHEMA}_{sport_id}_{season}.json"
+
+
+def discard_old_schemas(sport_id: int, season: int) -> list[str]:
+    """
+    Delete caches written by a previous shape, once this one has been built.
+
+    An older file is already ignored, so this is housekeeping rather than
+    correctness: the scheduled run carries the cache between days as an
+    artifact, and without this every schema change would leave its predecessor
+    in that artifact permanently.
+    """
+    current = _cache_path(sport_id, season)
+    removed = []
+    for path in current.parent.glob(f"pitch_v*_{sport_id}_{season}.json"):
+        if path != current:
+            path.unlink()
+            removed.append(path.name)
+    return removed
 
 
 def _keyed(raw: dict) -> dict[int, dict[str, int]]:
@@ -312,6 +390,9 @@ def gather(sport_id: int, season: int, progress: bool = True) -> dict:
                 )
 
     _save(sport_id, season, games)
+    for name in discard_old_schemas(sport_id, season):
+        if progress:
+            print(f"    removed superseded cache {name}", flush=True)
     if progress and failed:
         print(f"    {failed} game(s) could not be fetched", flush=True)
     return games
@@ -361,9 +442,16 @@ def rates(totals: dict[str, int]) -> dict[str, float | None]:
     taken = totals["pitches"] - swings
     tracked = sum(totals[field] for field in TRAJECTORY_FIELDS)
     placed = sum(totals[field] for field in SPRAY_FIELDS)
+    outside = totals["out_of_zone"]
+    measured = totals["measured"]
     return {
         "whiffs": totals["whiffs"] / swings if swings else None,
         "called_strikes": totals["called_strikes"] / taken if taken else None,
         "ground_balls": totals["ground"] / tracked if tracked else None,
         "pull": totals["pull"] / placed if placed else None,
+        # Absent below Triple-A, where nothing tracks a pitch's location or a
+        # ball's speed off the bat, and a level with no measurements returns
+        # None here rather than a factor built from nothing.
+        "chases": totals["chases"] / outside if outside else None,
+        "exit_speed": totals["exit_speed_total"] / measured if measured else None,
     }

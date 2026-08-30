@@ -84,6 +84,20 @@ The honest test is which values best predict a park's behaviour in a season
 they were not built from. That is tractable, because per-season factors are
 stored in `config/park_factors/` rather than only the blend.
 
+The weights assume three completed seasons of history, which every component
+has today: Triple-A tracking begins in 2023, so chase and exit speed have 2023
+through 2025 behind them and get the full window like everything else.
+
+That will not be true the season tracking reaches a new level, and the weights
+are the wrong thing to worry about when it does. `blend` renormalises per
+component over the seasons that actually carry it, so a component with one year
+behind it is that year rather than that year dragged two-thirds of the way to
+neutral by absent data. What renormalising cannot supply is reliability: a
+one-season factor has `REGRESSION_PA` and nothing else, where a three-season one
+has the averaging as a second defence. A newly tracked level will therefore
+carry the noisiest factors in the table for its first two years, and there is
+no way to shorten that except to wait.
+
 ## Batted-ball geometry
 
 | Constant | Value | Where | What it does |
@@ -91,6 +105,7 @@ stored in `config/park_factors/` rather than only the blend.
 | `CENTER_BAND` | 15° | `pitch_data.py` | Half-width of the middle of the field, so pull, centre and opposite field are rough thirds |
 | `PLATE_X`, `PLATE_Y` | 125, 205 | `pitch_data.py` | Home plate in the gameday coordinate frame, the origin every spray angle is measured from |
 | Foul tip | counted as a whiff | `pitch_data.py` | Classification of a pitch the batter got a piece of but did not control |
+| `HARD_HIT_MPH` | 95 | `pitch_data.py` | Exit velocity at or above which a batted ball is counted as hard hit |
 
 `CENTER_BAND` quietly determines every pull rate in the digest and the pull
 park factor besides. Thirty degrees splits the field into even thirds, which is
@@ -98,9 +113,28 @@ tidy but arbitrary: pulled contact is not distributed evenly across the field,
 and the band that best separates a genuine pull hitter from an average one is
 an empirical question nobody has asked here.
 
-The plate coordinates were checked against fielder positions rather than taken
-on faith, but they are one pair of numbers for every venue, and the feed's
-coordinate frame is not guaranteed identical everywhere.
+The origin it is measured from is no longer a convention. Triple-A records a
+measured distance alongside the landing coordinates, and for well-struck fly
+balls the two describe the same event, so the assumed plate position can be
+checked against them: across 642 such balls the committed `(125, 205)` gives a
+scale of 2.39 feet per unit with a dispersion of 0.2%, and the best-fitting
+origin on a wide grid is `(126, 204)` at 0.1%. The frame is therefore correct to
+within about two feet, and the resulting 41% pull, 35% centre, 24% opposite
+matches published major-league distributions. This is confirmed at Triple-A
+only; the lower levels record no distance to check themselves against.
+
+The trajectory labels the ground-ball and air rates are built from are a scorer's
+judgement, and Triple-A's launch angles are the measurement to test them against.
+They agree on 87.9% of 4,385 batted balls, and the resulting air rate reads 57.6%
+where the measurement says 56.1%. So the label is sound but reads slightly airy,
+mostly through line drives that left the bat below ten degrees. Since the bias is
+shared by everyone in a league, it moves a percentile far less than it moves a
+rate.
+
+`HARD_HIT_MPH` is Statcast's own threshold, taken as-is so the number means what
+a reader expects it to. It is a major-league convention applied to a level whose
+population hits softer, which will put more Triple-A hitters below it than the
+threshold was drawn to separate.
 
 ## What counts as worth reporting
 
