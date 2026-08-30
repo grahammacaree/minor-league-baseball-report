@@ -84,16 +84,19 @@ The honest test is which values best predict a park's behaviour in a season
 they were not built from. That is tractable, because per-season factors are
 stored in `config/park_factors/` rather than only the blend.
 
-The weights assume three seasons of history, and the chase and exit-velocity
-components do not have three seasons of anything. `blend` renormalises per
+The weights assume three completed seasons of history, which every component
+has today: Triple-A tracking begins in 2023, so chase and exit speed have 2023
+through 2025 behind them and get the full window like everything else.
+
+That will not be true the season tracking reaches a new level, and the weights
+are the wrong thing to worry about when it does. `blend` renormalises per
 component over the seasons that actually carry it, so a component with one year
 behind it is that year rather than that year dragged two-thirds of the way to
 neutral by absent data. What renormalising cannot supply is reliability: a
-one-season factor is `REGRESSION_PA` and nothing else, where a three-season one
-has the averaging as a second defence. Those components are therefore the
-noisiest in the table for their first two years, and will be again for every
-level that tracking reaches later — the same problem arrives fresh at Double-A
-the season it gets cameras.
+one-season factor has `REGRESSION_PA` and nothing else, where a three-season one
+has the averaging as a second defence. A newly tracked level will therefore
+carry the noisiest factors in the table for its first two years, and there is
+no way to shorten that except to wait.
 
 ## Batted-ball geometry
 
