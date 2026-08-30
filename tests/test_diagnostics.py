@@ -5,9 +5,7 @@ from mlb_report import diagnostics
 
 def test_a_level_with_no_play_by_play_is_called_out(monkeypatch):
     """The bars vanish from the email without a word, so the log says it."""
-    monkeypatch.setattr(
-        diagnostics.pitch_data, "load_cached", lambda sport, season: {}
-    )
+    monkeypatch.setattr(diagnostics.pitch_data, "load_cached", lambda sport, season: {})
     run = diagnostics.Run()
     diagnostics.pitch_coverage(run, (11,), 2026)
 

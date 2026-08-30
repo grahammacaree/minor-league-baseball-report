@@ -83,6 +83,7 @@ def _pitching_season(stat: dict, player_fip: float) -> str:
     follow as two readings of it: what the runs say, and what the strikeouts,
     walks and home runs say they should have been.
     """
+
     def count(key: str) -> int:
         try:
             return int(float(stat.get(key, 0) or 0))

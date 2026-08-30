@@ -190,6 +190,8 @@ def test_level_headings_render_as_headings():
     assert "<h3" in html
     assert "AAA</h3>" in html
     assert "### AAA" not in html
+
+
 @pytest.fixture
 def delivery(monkeypatch):
     """A stand-in for the outside world, recording whether anything was sent."""
