@@ -197,6 +197,11 @@ def evaluate(
             label += INVERTED_MARK
             if percentile is not None:
                 percentile = 100 - percentile
+        if percentile is not None:
+            # A rank against a finite league can land on either end, and both
+            # ends read as nonsense: nobody is in the hundredth percentile, and
+            # "0th" looks like a missing number rather than a last place.
+            percentile = min(99, max(1, percentile))
         return Skill(label, percentile, observed, unit=SKILL_UNITS.get(name))
 
     skills: list[Skill] = []

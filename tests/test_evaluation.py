@@ -467,6 +467,24 @@ def test_exit_velocity_is_reported_in_the_unit_it_was_measured_in():
     assert "Chase%\u2193 25.0%" in rendered
 
 
+def test_neither_end_of_the_scale_reads_as_a_missing_number():
+    """
+    A rank against a finite league lands on 0 or 100 often enough to matter —
+    a hitter with no home runs is bottom of every league — and both ends read
+    as a bug rather than as a last or first place.
+    """
+    worst = evaluation.evaluate(player(homeRuns=0), baseline(), 50)
+    best = evaluation.evaluate(player(homeRuns=75), baseline(), 50)
+
+    ranks = {skill.name: skill.percentile for skill in worst.skills}
+    assert ranks["HR/FB"] == 1
+    ranks = {skill.name: skill.percentile for skill in best.skills}
+    assert ranks["HR/FB"] == 99
+
+    assert "0th" not in evaluation.render_skills(worst)
+    assert "100th" not in evaluation.render_skills(best)
+
+
 def test_a_pitcher_reads_his_chase_beside_the_whiff():
     """Drawing a chase and missing the bat are two results of the same pitch."""
     result = evaluation.evaluate(
