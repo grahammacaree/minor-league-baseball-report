@@ -48,6 +48,42 @@ def api(monkeypatch):
     return fake
 
 
+@pytest.fixture
+def club_list(monkeypatch):
+    """The real club lookup over a stubbed network, one call counted per level."""
+    asked = []
+
+    def fake_get(path, **params):
+        sport_id = params.get("sportId")
+        asked.append(sport_id)
+        if sport_id != 11:
+            return {"teams": []}
+        return {"teams": [{"id": 529, "parentOrgId": ORG, "sport": {"id": 11}}]}
+
+    monkeypatch.setattr(fetchers.statsapi, "get", fake_get)
+    fetchers.statsapi._affiliate_teams.cache_clear()
+    yield asked
+    fetchers.statsapi._affiliate_teams.cache_clear()
+
+
+def test_the_club_list_is_asked_for_once_however_often_it_is_needed(club_list):
+    """Three parts of a run need it, and it does not change between them."""
+    levels = len(fetchers.statsapi.AFFILIATE_SPORT_IDS)
+
+    for _ in range(3):
+        assert fetchers.statsapi.affiliate_teams(ORG, 2026) == [
+            {"id": 529, "parentOrgId": ORG, "sport": {"id": 11}}
+        ]
+
+    assert len(club_list) == levels
+
+
+def test_a_caller_editing_the_club_list_does_not_edit_the_next_caller_s(club_list):
+    fetchers.statsapi.affiliate_teams(ORG, 2026).append({"id": 999})
+    again = fetchers.statsapi.affiliate_teams(ORG, 2026)
+    assert [team["id"] for team in again] == [529]
+
+
 def split(day=28, summary="2-4, HR", sport="AAA", game_pk=812345):
     return {
         "date": f"2026-08-{day}",
