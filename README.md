@@ -14,8 +14,9 @@ prospect who did not play is simply absent.
 
 **Top ten season lines.** The season so far, with each player's standard line presented.
 Recent hot and cold streaks are noted. They're then ranked against their league,
-park-adjusted, on five key skills. Earlier levels from this season are noted after the
-skill block.
+park-adjusted, on five key skills — seven at Triple-A, whose parks track pitch location
+and exit velocity where no level below them does. Earlier levels from this season are
+noted after the skill block.
 
 **Moves and injuries**, and, when there are any, players who have just joined the
 organization or left it. Names link to the player's page on MLB.com. Rankings lead, so
