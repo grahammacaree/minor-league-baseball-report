@@ -320,6 +320,16 @@ credit every shortstop with shortstop scarcity, including the ones who will not
 be shortstops. The honest treatment is to carry that as an assumption stated
 alongside the projection rather than as a number folded into it.
 
+Injury is further out of reach than defence, and worth naming because the digest
+reports injured-list moves and the temptation is obvious. What is here is the
+outcome with none of the mechanism: no kinematics, no kinetics, no workload
+beyond counts of pitches and appearances, nothing medical. The label is poor as
+well — placements are frequently undisclosed, the list is used for roster
+management, dates are backdated and severity is invisible — so a model would be
+fitting a rare, censored, noisily-labelled event against features with no causal
+contact with it. Durability as an observed outcome is reportable: days on the
+list, gaps between appearances, games played. Anticipating the next one is not.
+
 One more shape question follows from choosing wRC+: it is a rate, so a model
 trained on it projects quality and says nothing about how much of it there will
 be. Value needs playing time as well, which is a second and largely unrelated
