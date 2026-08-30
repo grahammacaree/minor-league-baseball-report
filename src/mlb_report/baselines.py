@@ -329,6 +329,16 @@ def _with_batted_ball(
         player.stat["sprayedBalls"] = sum(
             counts[field] for field in pitch_data.SPRAY_FIELDS
         )
+        # Absent below Triple-A, where nothing tracks a pitch's location or a
+        # ball's speed. Left out of the stat line entirely rather than set to
+        # zero, so the rates built on them report nothing instead of a floor.
+        if counts.get("out_of_zone"):
+            player.stat["pitchesOutOfZone"] = counts["out_of_zone"]
+            player.stat["chases"] = counts.get("chases", 0)
+        if counts.get("measured"):
+            player.stat["measuredBalls"] = counts["measured"]
+            player.stat["exitSpeedTotal"] = counts.get("exit_speed_total", 0)
+            player.stat["hardHitBalls"] = counts.get("hard_hit", 0)
     return pool
 
 
@@ -362,6 +372,11 @@ HITTING_METRICS = {
     "discipline": sm.walk_rate,
     "solid_contact": sm.solid_contact_rate,
     "strikeout_rate": sm.strikeout_rate,
+    # Measured rather than inferred, and only where a park measures them. A
+    # league without tracking produces no distribution for these, so no player
+    # in it can be ranked on them and none is.
+    "chase": sm.chase_rate,
+    "exit_velocity": sm.average_exit_velocity,
 }
 
 # The pitching side mirrors it, one metric at a time: whiffs against contact,
@@ -374,6 +389,10 @@ PITCHING_METRICS = {
     "pull": sm.pull_rate,
     "command": lambda stat: sm.walk_rate(stat),
     "strikeouts_minus_walks": sm.strikeouts_minus_walks,
+    # Read from the other end: the chases a pitcher drew, and how hard he was
+    # hit. Both are the same measurement as the hitter's, pointing the other way.
+    "chase": sm.chase_rate,
+    "exit_velocity": sm.average_exit_velocity,
 }
 
 # Lower is better, so the percentile is inverted before it is reported. Keyed by
@@ -381,8 +400,11 @@ PITCHING_METRICS = {
 # a hitter does damage and therefore the direction that flatters him, while the
 # same contact allowed is the pitcher's problem.
 INVERTED_METRICS = {
-    "hitting": {"strikeout_rate"},
-    "pitching": {"command", "home_runs_per_fly", "pull"},
+    # Chasing is the hitter's mistake and the pitcher's achievement, and being
+    # hit hard is the pitcher's problem and the hitter's whole purpose, so both
+    # metrics point opposite ways on the two sides.
+    "hitting": {"strikeout_rate", "chase"},
+    "pitching": {"command", "home_runs_per_fly", "pull", "exit_velocity"},
 }
 
 
@@ -408,6 +430,11 @@ METRIC_COMPONENTS = {
     "command": "walks",
     "strikeouts_minus_walks": "strikeouts",
     "pull": "pull",
+    # Each against its own measurement rather than a proxy: a park where
+    # hitters chase more and one where the ball leaves the bat harder are
+    # different parks, and the two effects are only loosely related.
+    "chase": "chases",
+    "exit_velocity": "exit_speed",
 }
 
 # A park that inflates whiffs deflates contact, and one that inflates ground

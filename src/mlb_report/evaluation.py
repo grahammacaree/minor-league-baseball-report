@@ -26,6 +26,9 @@ class Skill:
     name: str
     percentile: int | None
     value: float | None
+    # None for a rate, which is rendered as a percentage. Anything else is
+    # reported in the unit it was measured in.
+    unit: str | None = None
 
 
 @dataclass(frozen=True)
@@ -111,16 +114,43 @@ SKILL_LABELS = {
     "contact_suppression": "Whiff%",
     "damage_limitation": "GB%",
     "command": "BB%",
+    "chase": "Chase%",
+    "exit_velocity": "EV",
 }
 
-# Five bars a side, mirrored: bat-to-ball, damage on contact, batted-ball shape,
-# direction, and the walk. A hitter's power is three of them rather than one,
-# because a hitter who lifts and pulls without clearing fences is a different
-# player from one who does neither and still runs a high HR/FB.
+# Every skill is a rate read as a percentage except the one that is measured
+# rather than counted, which is a speed and has to say so.
+SKILL_UNITS = {"exit_velocity": "mph"}
+
+# Bat-to-ball, then damage, then batted-ball shape and direction, then the
+# plate. Exit velocity leads the damage group because it is the only measured
+# member of it: HR/FB, air and pull describe how a hitter goes about doing
+# damage, and the speed off the bat is whether he actually did any.
+#
+# Chase and exit velocity are listed for every level but only exist at Triple-A,
+# where the parks track pitch location and ball speed. Below it neither has a
+# value, and a skill without one is dropped when the line is rendered — so a
+# Triple-A player shows seven bars and everyone under him shows five, without
+# either side needing to know which level it is.
 HEADLINE_SKILLS = {
-    "hitting": ("contact", "home_runs_per_fly", "air", "pull", "discipline"),
+    # Chasing sits with the walk rate rather than with the bat, because for a
+    # hitter it is the same skill read a pitch earlier: what he offered at is
+    # why he walked or did not.
+    "hitting": (
+        "contact",
+        "exit_velocity",
+        "home_runs_per_fly",
+        "air",
+        "pull",
+        "discipline",
+        "chase",
+    ),
+    # For a pitcher the same rate belongs beside the whiff, since drawing a
+    # chase and missing the bat are two results of the same pitch.
     "pitching": (
         "contact_suppression",
+        "chase",
+        "exit_velocity",
         "home_runs_per_fly",
         "damage_limitation",
         "pull",
@@ -167,13 +197,25 @@ def evaluate(
             label += INVERTED_MARK
             if percentile is not None:
                 percentile = 100 - percentile
-        return Skill(label, percentile, observed)
+        if percentile is not None:
+            # A rank against a finite league can land on either end, and both
+            # ends read as nonsense: nobody is in the hundredth percentile, and
+            # "0th" looks like a missing number rather than a last place.
+            percentile = min(99, max(1, percentile))
+        return Skill(label, percentile, observed, unit=SKILL_UNITS.get(name))
 
     skills: list[Skill] = []
     if sample >= minimum_sample:
         # Below the sample floor a percentile is noise dressed up as insight,
         # so no skill line is produced at all.
-        skills = [rank(name) for name in HEADLINE_SKILLS[player.group]]
+        # A metric the level does not measure is not a skill he lacks, so it is
+        # dropped rather than carried as a blank. This is what leaves a
+        # Triple-A player with seven bars and everyone below him with five.
+        skills = [
+            skill
+            for skill in (rank(name) for name in HEADLINE_SKILLS[player.group])
+            if skill.value is not None
+        ]
     else:
         return Evaluation(
             player_id=player.player_id,
@@ -295,11 +337,17 @@ def render_skills(evaluation: Evaluation) -> str | None:
     the number itself settles it.
     """
     parts = [
-        f"{skill.name} {skill.value * 100:.1f}% {_ordinal(skill.percentile)}"
+        f"{skill.name} {_measurement(skill)} {_ordinal(skill.percentile)}"
         for skill in evaluation.skills
         if skill.percentile is not None and skill.value is not None
     ]
     return SKILL_SEPARATOR.join(parts) if parts else None
+
+
+def _measurement(skill: Skill) -> str:
+    if skill.unit is None:
+        return f"{skill.value * 100:.1f}%"
+    return f"{skill.value:.1f} {skill.unit}"
 
 
 def _full_line(evaluation: Evaluation) -> str:

@@ -25,7 +25,8 @@ _CODE = re.compile(r"`([^`]+)`")
 # markdown document that becomes both the text and the HTML part, and the text
 # part wants exactly these words. Metric names carry no spaces, which is what
 # lets the three fields be told apart.
-_SKILL = re.compile(r"^(\S+) (\d+\.\d%) (\d{1,3})(st|nd|rd|th)$")
+# A rate reads as a percentage; exit velocity is a speed and carries its unit.
+_SKILL = re.compile(r"^(\S+) (\d+\.\d(?:%| mph)) (\d{1,3})(st|nd|rd|th)$")
 
 # Bars are drawn as table cells with a background colour, not as images or CSS
 # widths. Mail clients block images by default and Outlook's desktop renderer

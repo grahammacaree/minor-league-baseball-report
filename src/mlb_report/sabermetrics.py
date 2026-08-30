@@ -319,6 +319,34 @@ def pull_rate(stat: dict) -> float | None:
     return _n(stat, "pulledBalls") / placed
 
 
+def chase_rate(stat: dict) -> float | None:
+    """
+    Swings at pitches outside the strike zone, as a share of those seen.
+
+    The zone here is the tracked one rather than the umpire's, so this measures
+    the decision rather than the call that followed it. Only Triple-A parks
+    track pitch location, so this is absent everywhere below them.
+    """
+    outside = _n(stat, "pitchesOutOfZone")
+    if outside <= 0:
+        return None
+    return _n(stat, "chases") / outside
+
+
+def average_exit_velocity(stat: dict) -> float | None:
+    """
+    Mean speed off the bat, in miles per hour.
+
+    A mean rather than a rate, and the only measurement of contact quality
+    anywhere in the digest: everything else infers it from what the ball did
+    afterwards, which folds in the defence and the park. Triple-A only.
+    """
+    measured = _n(stat, "measuredBalls")
+    if measured <= 0:
+        return None
+    return _n(stat, "exitSpeedTotal") / measured
+
+
 def air_rate(stat: dict) -> float | None:
     """
     Batted balls hit in the air, as a share of batted balls.
