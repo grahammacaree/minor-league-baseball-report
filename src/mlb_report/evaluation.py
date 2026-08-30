@@ -122,11 +122,10 @@ SKILL_LABELS = {
 # rather than counted, which is a speed and has to say so.
 SKILL_UNITS = {"exit_velocity": "mph"}
 
-# Mirrored a side: bat-to-ball, the swing decision, damage on contact, how hard
-# the ball was struck, batted-ball shape, direction, and the walk. A hitter's
-# power is several of them rather than one, because a hitter who lifts and pulls
-# without clearing fences is a different player from one who does neither and
-# still runs a high HR/FB.
+# Bat-to-ball, then damage, then batted-ball shape and direction, then the
+# plate. Exit velocity leads the damage group because it is the only measured
+# member of it: HR/FB, air and pull describe how a hitter goes about doing
+# damage, and the speed off the bat is whether he actually did any.
 #
 # Chase and exit velocity are listed for every level but only exist at Triple-A,
 # where the parks track pitch location and ball speed. Below it neither has a
@@ -134,20 +133,25 @@ SKILL_UNITS = {"exit_velocity": "mph"}
 # Triple-A player shows seven bars and everyone under him shows five, without
 # either side needing to know which level it is.
 HEADLINE_SKILLS = {
+    # Chasing sits with the walk rate rather than with the bat, because for a
+    # hitter it is the same skill read a pitch earlier: what he offered at is
+    # why he walked or did not.
     "hitting": (
         "contact",
-        "chase",
-        "home_runs_per_fly",
         "exit_velocity",
+        "home_runs_per_fly",
         "air",
         "pull",
         "discipline",
+        "chase",
     ),
+    # For a pitcher the same rate belongs beside the whiff, since drawing a
+    # chase and missing the bat are two results of the same pitch.
     "pitching": (
         "contact_suppression",
         "chase",
-        "home_runs_per_fly",
         "exit_velocity",
+        "home_runs_per_fly",
         "damage_limitation",
         "pull",
         "command",

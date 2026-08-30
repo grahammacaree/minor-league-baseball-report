@@ -90,15 +90,24 @@ rank within the player's own league, so the same rank means the same thing at
 every level. Triple-A adds two more, because its parks measure things no other
 level does.
 
-| | Hitters | Pitchers | Levels |
-|---|---|---|---|
-| Bat-to-ball | `Contact%` | `Whiff%` | all |
-| Swing decision | `Chase%↓` | `Chase%` | Triple-A |
-| Damage | `HR/FB` | `HR/FB↓` | all |
-| Contact quality | `EV` | `EV↓` | Triple-A |
-| Ball in the air | `Air%` | `GB%` | all |
-| Direction | `Pull%` | `Pull%↓` | all |
-| Plate discipline | `BB%` | `BB%↓` | all |
+| Hitters | Pitchers | Levels |
+|---|---|---|
+| `Contact%` | `Whiff%` | all |
+| | `Chase%` | Triple-A |
+| `EV` | `EV↓` | Triple-A |
+| `HR/FB` | `HR/FB↓` | all |
+| `Air%` | `GB%` | all |
+| `Pull%` | `Pull%↓` | all |
+| `BB%` | `BB%↓` | all |
+| `Chase%↓` | | Triple-A |
+
+The order is not shared between the columns, because the same rate does not
+mean the same thing on both sides. A pitcher's chase rate sits beside his whiff
+rate, since drawing a chase and missing the bat are two outcomes of one pitch.
+A hitter's sits with his walk rate, since what he offered at is why he walked or
+did not. Exit velocity leads the damage group on both sides: `HR/FB`, `Air%` and
+`Pull%` describe how a hitter goes about doing damage, and the speed off the bat
+is whether he did any.
 
 `EV` is average exit velocity in miles per hour, the only measurement of contact
 quality anywhere in the digest — every other line infers it from what the ball
@@ -111,9 +120,9 @@ player carries seven bars and a Double-A player five, and neither has to know
 which level it is. The consequence worth remembering is that a promotion adds
 two bars and a demotion removes them, which is not the player changing.
 
-The two sides mirror each other deliberately. The same events describe both
-participants, and a reader who has learned to read one column can read the
-other.
+The two sides measure each other deliberately: the same events describe both
+participants, so a reader who has learned one column can read the other, even
+where the two order those rates differently.
 
 Rates are named for what they measure rather than for the virtue they imply —
 `Whiff%` rather than "swing-and-miss ability" — because a reader can check a

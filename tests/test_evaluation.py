@@ -437,14 +437,16 @@ def test_a_tracked_level_adds_two_bars_to_the_five(monkeypatch):
     )
     names = [skill.name for skill in tracked.skills]
 
+    # Exit velocity leads the damage group; chasing sits with the walk rate,
+    # being the same plate skill read a pitch earlier.
     assert names == [
         "Contact%",
-        "Chase%\u2193",
-        "HR/FB",
         "EV",
+        "HR/FB",
         "Air%",
         "Pull%",
         "BB%",
+        "Chase%\u2193",
     ]
     assert len([skill.name for skill in evaluation.evaluate(
         player(), baseline(), 50
@@ -463,6 +465,21 @@ def test_exit_velocity_is_reported_in_the_unit_it_was_measured_in():
     # 17,800 mph over 200 measured balls.
     assert "EV 89.0 mph" in rendered
     assert "Chase%\u2193 25.0%" in rendered
+
+
+def test_a_pitcher_reads_his_chase_beside_the_whiff():
+    """Drawing a chase and missing the bat are two results of the same pitch."""
+    result = evaluation.evaluate(
+        player(group="pitching", battersFaced=400, **TRACKED),
+        baseline(
+            group="pitching",
+            distributions=baseline().distributions | TRACKED_DISTRIBUTIONS,
+        ),
+        50,
+    )
+    names = [skill.name for skill in result.skills]
+
+    assert names[:3] == ["Whiff%", "Chase%", "EV\u2193"]
 
 
 def test_chasing_is_the_hitters_fault_and_the_pitchers_doing():
