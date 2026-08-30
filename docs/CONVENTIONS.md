@@ -299,10 +299,29 @@ its inputs cannot see, and would learn to attribute defensive value to batting
 lines. It would look accurate across a whole cohort and be wrong in a specific,
 predictable direction: worst on exactly the glove-first shortstops and catchers
 whose value is least visible in a slash line. The label therefore has to be an
-offence-only measure — runs above average from the bat, and a run-prevention
-figure for pitchers — and the output has to be named for what it is.
+offence-only measure — wRC+ for hitters, already computed here and already
+adjusted for park and league, and a run-prevention figure for pitchers — and the
+output has to be named for what it is.
 
-That also fixes what such a system could never do, which is compare across
-positions. A shortstop and a first baseman with identical bats are not
-identically valuable, and the difference between them is precisely the part
-this data does not hold.
+Comparing across positions is still available, because a positional adjustment
+is a scarcity term rather than a defensive valuation: it prices how hard the
+position is to fill, and applies from the position a player occupies without any
+claim about how well he plays it. A shortstop and a first baseman with identical
+bats can therefore be ranked against each other. What stays invisible is the
+variation within a position — this shortstop against that one — which is the
+residual the data genuinely does not hold.
+
+The adjustment does reintroduce a defensive judgement through the input, which
+is worth being explicit about because it is quiet. Applying it to a prospect
+means assuming the position he will occupy in the majors, and prospects sliding
+down the defensive spectrum is among the most common developmental outcomes
+there is. Taking the organization's current listing at face value would quietly
+credit every shortstop with shortstop scarcity, including the ones who will not
+be shortstops. The honest treatment is to carry that as an assumption stated
+alongside the projection rather than as a number folded into it.
+
+One more shape question follows from choosing wRC+: it is a rate, so a model
+trained on it projects quality and says nothing about how much of it there will
+be. Value needs playing time as well, which is a second and largely unrelated
+problem — durability and opportunity rather than skill — and is better modelled
+separately than smuggled into a rate.
