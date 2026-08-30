@@ -413,6 +413,74 @@ def test_a_skill_carries_its_own_rate_beside_the_rank():
     assert " · " in rendered
 
 
+TRACKED = {
+    "pitchesOutOfZone": 400,
+    "chases": 100,
+    "measured": 200,
+    "measuredBalls": 200,
+    "exitSpeedTotal": 17800.0,
+    "hardHitBalls": 80,
+}
+
+TRACKED_DISTRIBUTIONS = {
+    "chase": sorted(i / 100 for i in range(1, 101)),
+    "exit_velocity": sorted(80 + i / 10 for i in range(1, 101)),
+}
+
+
+def test_a_tracked_level_adds_two_bars_to_the_five(monkeypatch):
+    """Triple-A measures the swing decision and the contact; nothing below does."""
+    tracked = evaluation.evaluate(
+        player(**TRACKED),
+        baseline(distributions=baseline().distributions | TRACKED_DISTRIBUTIONS),
+        50,
+    )
+    names = [skill.name for skill in tracked.skills]
+
+    assert names == [
+        "Contact%",
+        "Chase%\u2193",
+        "HR/FB",
+        "EV",
+        "Air%",
+        "Pull%",
+        "BB%",
+    ]
+    assert len([skill.name for skill in evaluation.evaluate(
+        player(), baseline(), 50
+    ).skills]) == 5
+
+
+def test_exit_velocity_is_reported_in_the_unit_it_was_measured_in():
+    """Every other skill is a rate; this one is a speed and has to say so."""
+    result = evaluation.evaluate(
+        player(**TRACKED),
+        baseline(distributions=baseline().distributions | TRACKED_DISTRIBUTIONS),
+        50,
+    )
+    rendered = evaluation.render_skills(result)
+
+    # 17,800 mph over 200 measured balls.
+    assert "EV 89.0 mph" in rendered
+    assert "Chase%\u2193 25.0%" in rendered
+
+
+def test_chasing_is_the_hitters_fault_and_the_pitchers_doing():
+    """The same rate, ranked opposite ways depending on who produced it."""
+    distributions = baseline().distributions | TRACKED_DISTRIBUTIONS
+    hitter = evaluation.evaluate(
+        player(**TRACKED), baseline(distributions=distributions), 50
+    )
+    pitcher = evaluation.evaluate(
+        player(group="pitching", battersFaced=400, **TRACKED),
+        baseline(group="pitching", distributions=distributions),
+        50,
+    )
+
+    chases = {skill.name: skill for skill in hitter.skills + pitcher.skills}
+    assert chases["Chase%\u2193"].percentile == 100 - chases["Chase%"].percentile
+
+
 def test_power_bars_are_absent_when_play_by_play_was_never_gathered():
     """All three lean on play-by-play, so none of them guesses at a zero."""
     thin = player()
@@ -421,9 +489,9 @@ def test_power_bars_are_absent_when_play_by_play_was_never_gathered():
 
     result = evaluation.evaluate(thin, baseline(), minimum_sample=50)
     ranked = {skill.name: skill.percentile for skill in result.skills}
-    assert ranked["HR/FB"] is None
-    assert ranked["Air%"] is None
-    assert ranked["Pull%"] is None
+    assert "HR/FB" not in ranked
+    assert "Air%" not in ranked
+    assert "Pull%" not in ranked
     assert ranked["Contact%"] is not None
 
 

@@ -142,6 +142,21 @@ def test_an_inverted_metric_keeps_its_arrow():
     assert "5.1%" in html
 
 
+def test_a_speed_draws_a_bar_alongside_the_rates():
+    """
+    Exit velocity is the one skill measured in something other than percent,
+    and the whole table is redrawn or none of it is — so a unit the parser did
+    not expect would cost a Triple-A player every bar he has.
+    """
+    html = emailer.markdown_to_html(
+        "- **A Player** — 2-4\n"
+        "  Contact% 78.2% 58th · EV 92.4 mph 88th · Chase%\u2193 24.0% 71st\n"
+    )
+    assert "<table" in html
+    assert "92.4 mph" in html
+    assert "88th" in html and "71st" in html
+
+
 def test_a_bar_is_never_completely_empty():
     """A first-percentile skill still needs something to see."""
     html = emailer.markdown_to_html(
