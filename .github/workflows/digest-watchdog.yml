@@ -9,8 +9,10 @@ name: Digest watchdog
 # there a run at all". Missing one is a failure here, which is loud.
 on:
   schedule:
-    # Two hours after the digest, leaving room for it to be late rather than
-    # absent, and off the hour for the same reason the digest is.
+    # Eight hours after the digest, which is the gap that makes this reliable.
+    # Both jobs are delayed independently and by hours, so a short buffer would
+    # have this checking for a digest that has not been allowed to run yet and
+    # reporting a delay as an absence.
     - cron: "41 15 * * *"
   workflow_dispatch:
 
