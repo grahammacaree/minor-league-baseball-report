@@ -280,7 +280,12 @@ def build(
         )
 
     for move in moves:
-        label = "Injury" if move.is_injury else move.type_desc
+        if move.is_injury:
+            label = "Injury"
+        elif move.is_promotion:
+            label = "Promoted"
+        else:
+            label = move.type_desc
         digest.moves.append(f"**{label}** — {move.description}")
 
     # Where he was ranked, rather than what the transaction wire called him.

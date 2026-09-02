@@ -182,10 +182,20 @@ def test_moves_are_listed_with_injuries_labelled():
             "placed on the injured list.",
         ),
         Transaction(3, "Henry Ford", REPORT_DATE, "Optioned", "optioned to Everett."),
+        Transaction(
+            4,
+            "Lazaro Montes",
+            REPORT_DATE,
+            "Selected",
+            "Seattle Mariners selected the contract of RF Lazaro Montes "
+            "from Tacoma Rainiers.",
+        ),
     ]
     digest = build(moves=moves)
     assert "**Injury**" in digest.moves[0]
     assert "**Optioned**" in digest.moves[1]
+    assert "**Promoted**" in digest.moves[2]
+    assert "**Selected**" not in digest.moves[2]
 
 
 def test_unresolved_prospects_are_flagged_as_a_note():
