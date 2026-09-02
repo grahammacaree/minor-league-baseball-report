@@ -112,3 +112,17 @@ class Transaction:
     def is_injury(self) -> bool:
         text = self.description.lower()
         return "injured list" in text or "rehab assignment" in text
+
+    @property
+    def is_promotion(self) -> bool:
+        """
+        A call-up to the majors.
+
+        MLB's feed labels selecting a minor-league contract as "Selected", and
+        bringing a 40-man player back from option as "Recalled". Both are
+        promotions; neither name is useful in the digest.
+        """
+        kind = self.type_desc.lower()
+        if kind in {"selected", "recalled"}:
+            return True
+        return "selected the contract" in self.description.lower()

@@ -215,6 +215,31 @@ def test_injury_moves_are_identified():
     assert not activated.is_injury
 
 
+def test_selecting_a_contract_is_a_promotion():
+    selected = Transaction(
+        1,
+        "Lazaro Montes",
+        date(2026, 9, 1),
+        "Selected",
+        "Seattle Mariners selected the contract of RF Lazaro Montes "
+        "from Tacoma Rainiers.",
+    )
+    recalled = Transaction(
+        2,
+        "A Player",
+        date(2026, 9, 1),
+        "Recalled",
+        "recalled from Tacoma Rainiers.",
+    )
+    optioned = Transaction(
+        3, "A Player", date(2026, 9, 1), "Optioned", "optioned to Tacoma Rainiers."
+    )
+    assert selected.is_promotion
+    assert recalled.is_promotion
+    assert not optioned.is_promotion
+    assert not selected.is_injury
+
+
 def test_innings_pitched_thirds_convert_to_real_numbers():
     log = GameLog(
         player_id=1,
