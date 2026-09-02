@@ -5,16 +5,18 @@ name: Daily farm digest
 # extra-inning game is over by about 06:05. Seven past seven leaves an hour on
 # top of that, and the digest reports on yesterday by default.
 #
-# It runs this early because it is read in the morning in Britain, and a
-# scheduled run here has been observed starting over three hours late. Late is
-# the normal case rather than the exception: these are best-effort, and a job
-# that must land by breakfast has to be queued for well before it.
+# It runs at 07:07 UTC because it is read in the morning in Britain — but the
+# schedule is no longer here. The workflow-trigger Worker dispatches it.
 #
-# Seven past rather than on the hour, which is where every cron anyone writes
-# ends up and so the most contended slot there is.
+# GitHub queues scheduled events best-effort, and the wait grew from a median
+# of 66 minutes to one of 6.7 hours in late August, with a worst case of 9.6
+# hours. No cron expression survives that: the game data is not complete before
+# about 06:05, so there is no slot that both waits for it and still arrives
+# before breakfast. A dispatched run skips the queue and starts within seconds.
+#
+# To change when this runs, edit wrangler.jsonc and JOBS in workflow-trigger.
+# There is nothing left in this file that controls the timing.
 on:
-  schedule:
-    - cron: "7 7 * * *"
   workflow_dispatch:
     inputs:
       report_date:

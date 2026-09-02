@@ -56,9 +56,16 @@ to your local file.
 
 ## Schedule
 
-The workflow runs at 13:00 UTC daily, early morning on the west coast, by which
-point even the late Pacific Coast League games have finished. It reports on the
-previous day.
+The workflow runs at 07:07 UTC daily, by which point even the late Pacific
+Coast League games have finished, and it reports on the previous day.
+
+The timing does not live here. GitHub queues scheduled events best-effort and
+the wait grew to several hours in late August, which no cron expression can
+absorb: the data is not complete before about 06:05, so there is no slot that
+both waits for it and still lands before breakfast in Britain. The schedule is
+therefore held in the `workflow-trigger` Worker, which dispatches this
+workflow, and dispatched runs start within seconds. To change when the digest
+arrives, edit that repository rather than this one.
 
 To test without waiting, run it manually with the dry-run box ticked:
 
