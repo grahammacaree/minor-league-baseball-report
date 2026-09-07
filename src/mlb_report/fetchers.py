@@ -73,8 +73,18 @@ def game_logs(
 
     def fetch(request: tuple[int, str, int]) -> list[GameLog]:
         player_id, group, sport_id = request
-        splits = statsapi.game_log(player_id, group, season, sport_id)
-        return [GameLog.from_split(player_id, group, split) for split in splits]
+        try:
+            splits = statsapi.game_log(player_id, group, season, sport_id)
+        except statsapi.StatsApiError:
+            # One player's feed should not kill the digest. A postponed club or
+            # a flaky response becomes an empty log for that player alone.
+            return []
+        logs = []
+        for split in splits:
+            log = GameLog.from_split(player_id, group, split)
+            if log is not None:
+                logs.append(log)
+        return logs
 
     # One request per player, fetched concurrently. Thirty players at most of a
     # second each is otherwise half the run, and they do not depend on one
@@ -98,7 +108,10 @@ def whiffs_for_outings(logs: list[GameLog]) -> dict[tuple[int, int], int]:
     def read(game_pk: int) -> dict[int, int]:
         try:
             return pitch_data.whiffs_by_pitcher(game_pk)
-        except statsapi.StatsApiError:
+        except Exception:
+            # Stats API failures, and any parse surprise in a weird box score
+            # (postponed, suspended, resumed, empty play-by-play). Strikeouts
+            # still print; the whiff count is the part that can be left off.
             return {}
 
     found: dict[tuple[int, int], int] = {}

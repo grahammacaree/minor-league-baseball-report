@@ -318,6 +318,86 @@ def test_a_game_that_cannot_be_read_is_skipped(monkeypatch):
     assert fetchers.whiffs_for_outings(logs) == {}
 
 
+def test_a_parse_surprise_in_play_by_play_is_also_skipped(monkeypatch):
+    """Zone-shaped KeyErrors used to kill the digest; they must not any more."""
+
+    def broken(game_pk):
+        raise KeyError("out_of_zone")
+
+    monkeypatch.setattr(fetchers.pitch_data, "whiffs_by_pitcher", broken)
+    logs = [
+        GameLog(77, "P", date(2026, 8, 28), 5001, "pitching", "AA", "T", "O", "", {})
+    ]
+
+    assert fetchers.whiffs_for_outings(logs) == {}
+
+
+def test_a_split_with_null_nested_objects_is_skipped():
+    """Postponed and half-written rows arrive with nulls rather than omissions."""
+    usable = GameLog.from_split(
+        1,
+        "hitting",
+        {
+            "date": "2026-09-06",
+            "game": {"gamePk": 100},
+            "player": None,
+            "sport": None,
+            "team": None,
+            "opponent": None,
+            "stat": None,
+        },
+    )
+    assert usable is not None
+    assert usable.opponent == ""
+    assert usable.game_pk == 100
+
+    assert (
+        GameLog.from_split(
+            1,
+            "hitting",
+            {"date": "2026-09-06", "game": None, "opponent": None, "stat": {}},
+        )
+        is None
+    )
+    assert (
+        GameLog.from_split(
+            1,
+            "hitting",
+            {"date": "2026-09-06", "game": {"gamePk": 0}, "stat": {}},
+        )
+        is None
+    )
+
+
+def test_one_players_broken_game_log_does_not_abort_the_rest(api, monkeypatch):
+    def flaky(player_id, group, season, sport_id):
+        api.game_log_calls.append((player_id, group, sport_id))
+        if player_id == 703155:
+            raise fetchers.statsapi.StatsApiError("flaky")
+        return [
+            {
+                "date": "2026-09-06",
+                "game": {"gamePk": 1},
+                "player": {"fullName": "Still Down"},
+                "sport": {"abbreviation": "AA"},
+                "team": {"name": "Arkansas"},
+                "opponent": {"name": "Tulsa"},
+                "stat": {"summary": "1-4"},
+            }
+        ]
+
+    monkeypatch.setattr(fetchers.statsapi, "game_log", flaky)
+    logs = fetchers.game_logs(
+        [
+            Prospect(1, "Broken", "OF", 703155),
+            Prospect(2, "Still Down", "OF", 815549),
+        ],
+        ORG,
+        2026,
+    )
+    assert [log.player_id for log in logs] == [815549]
+
+
 def raw_move(player_id, type_desc="Trade", to_team=529, from_team=145, person=True):
     entry = {
         "typeDesc": type_desc,

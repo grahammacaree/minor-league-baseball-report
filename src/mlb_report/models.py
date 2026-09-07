@@ -82,17 +82,33 @@ class GameLog:
         )
 
     @classmethod
-    def from_split(cls, player_id: int, group: str, split: dict) -> GameLog:
-        stat = split.get("stat", {})
+    def from_split(cls, player_id: int, group: str, split: dict) -> GameLog | None:
+        """
+        Build a log from one Stats API split, or None if the row is unusable.
+
+        Postponements, suspensions and half-written box scores sometimes arrive
+        with null nested objects. Treating those as missing rows is safer than
+        crashing the whole digest over one bad game.
+        """
+        day = split.get("date")
+        game = split.get("game") or {}
+        game_pk = game.get("gamePk")
+        if not day or not game_pk:
+            return None
+        try:
+            game_date = date.fromisoformat(day)
+        except ValueError:
+            return None
+        stat = split.get("stat") or {}
         return cls(
             player_id=player_id,
-            player_name=split.get("player", {}).get("fullName", ""),
-            game_date=date.fromisoformat(split["date"]),
-            game_pk=split.get("game", {}).get("gamePk", 0),
+            player_name=(split.get("player") or {}).get("fullName", ""),
+            game_date=game_date,
+            game_pk=game_pk,
             group=group,
-            level=split.get("sport", {}).get("abbreviation", "?"),
-            team=split.get("team", {}).get("name", ""),
-            opponent=split.get("opponent", {}).get("name", ""),
+            level=(split.get("sport") or {}).get("abbreviation", "?"),
+            team=(split.get("team") or {}).get("name", ""),
+            opponent=(split.get("opponent") or {}).get("name", ""),
             summary=stat.get("summary", ""),
             stat=stat,
         )

@@ -390,3 +390,23 @@ def test_by_player_totals_a_season_across_games():
     totals = pitch_data.by_player(games, "batters")
     assert totals[101]["ground"] == 3
     assert totals[101]["oppo"] == 3
+
+
+def test_daily_whiffs_tolerate_tracked_pitch_location(monkeypatch):
+    """
+    The daily digests only need whiff counts, but Triple-A play-by-play also
+    carries pitch location. Counting a chase must not crash a whiff lookup —
+    that is what took out the 7 September run.
+    """
+    payload = {
+        "allPlays": [
+            play(
+                "top",
+                pitch("Swinging Strike", zone=14),
+                pitch("Called Strike", zone=5),
+                pitcher=77,
+            )
+        ]
+    }
+    monkeypatch.setattr(pitch_data.statsapi, "get", lambda *a, **k: payload)
+    assert pitch_data.whiffs_by_pitcher(1) == {77: 1}

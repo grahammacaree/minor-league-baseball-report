@@ -126,7 +126,9 @@ def game_log(player_id: int, group: str, season: int, sport_id: int) -> list[dic
         season=season,
         sportId=sport_id,
     )
-    return [split for block in payload.get("stats", []) for split in block["splits"]]
+    return [
+        split for block in payload.get("stats", []) for split in block.get("splits", [])
+    ]
 
 
 def stats_leaderboard(
