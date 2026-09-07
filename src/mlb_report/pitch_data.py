@@ -160,7 +160,6 @@ def count_pitch(totals: dict[str, int], event: dict) -> None:
         totals["whiffs"] += 1
     elif "called strike" in description:
         totals["called_strikes"] += 1
-    count_zone(totals, event)
 
 
 def count_contact(totals: dict[str, int], event: dict) -> None:
@@ -221,6 +220,7 @@ def parse_game(game_pk: int, sides: dict[str, int]) -> dict:
             if not event.get("isPitch"):
                 continue
             count_pitch(totals, event)
+            count_zone(totals, event)
             count_contact(totals, event)
 
             # Both men are credited with the same pitch, read from opposite
