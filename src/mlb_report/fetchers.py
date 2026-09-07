@@ -28,14 +28,62 @@ def current_levels(prospects: list[Prospect], parent_org_id: int, season: int) -
     is now keeps the daily run to roughly one request per player instead of one
     per player per level.
     """
+    levels, _ = roster_snapshot(prospects, parent_org_id, season)
+    return levels
+
+
+def _active_entry(person: dict) -> dict | None:
+    """The roster row that is current, if the feed carried one."""
+    for entry in person.get("rosterEntries") or []:
+        if entry.get("isActive"):
+            return entry
+    return None
+
+
+def _injury_label(entry: dict) -> str | None:
+    """
+    A short IL note from a roster status, or None when the player is active.
+
+    Celesten's feed reads status description "Injured 7-Day"; that becomes
+    "on 7-day IL". Codes vary (D7, D10, D60, …); the description is the stable
+    part to read.
+    """
+    status = (entry.get("status") or {}).get("description") or ""
+    lowered = status.lower()
+    if "injured" not in lowered and "rehab" not in lowered:
+        return None
+    # "Injured 7-Day" / "Injured 60-Day" → "on 7-day IL"
+    for token in lowered.replace("injured", " ").replace("rehab", " ").split():
+        if token.endswith("-day") or token.endswith("day"):
+            number = "".join(ch for ch in token if ch.isdigit())
+            if number:
+                return f"on {number}-day IL"
+    if "rehab" in lowered:
+        return "on rehab assignment"
+    return "injured"
+
+
+def _roster_state(
+    prospects: list[Prospect], parent_org_id: int, season: int
+) -> dict[int, tuple[int, str | None]]:
+    """
+    Current sport id and, where relevant, an IL label for each tracked player.
+
+    One people request carries both: currentTeam for the level, rosterEntries
+    for whether he is actually available to play.
+    """
     player_ids = [p.player_id for p in prospects if p.player_id]
     sport_by_team = _sport_by_team(parent_org_id, season)
-    levels = {}
-    for person in statsapi.people(player_ids, hydrate="currentTeam"):
-        team_id = person.get("currentTeam", {}).get("id")
-        if sport_id := sport_by_team.get(team_id):
-            levels[person["id"]] = sport_id
-    return levels
+    state: dict[int, tuple[int, str | None]] = {}
+    for person in statsapi.people(player_ids, hydrate="currentTeam,rosterEntries"):
+        team_id = (person.get("currentTeam") or {}).get("id")
+        sport_id = sport_by_team.get(team_id)
+        if sport_id is None:
+            continue
+        entry = _active_entry(person)
+        label = _injury_label(entry) if entry else None
+        state[person["id"]] = (sport_id, label)
+    return state
 
 
 def in_majors(levels: dict[int, int]) -> set[int]:
@@ -43,6 +91,22 @@ def in_majors(levels: dict[int, int]) -> set[int]:
     return {
         player_id for player_id, sport_id in levels.items() if sport_id == MLB_SPORT_ID
     }
+
+
+def roster_snapshot(
+    prospects: list[Prospect], parent_org_id: int, season: int
+) -> tuple[dict[int, int], dict[int, str]]:
+    """
+    Current level and IL label for every tracked prospect, from one people call.
+
+    The level drives which game logs to fetch. The IL label is carried into the
+    season line so a top-ten prospect who has not played for weeks is still
+    explained, rather than looking like a quiet bat.
+    """
+    state = _roster_state(prospects, parent_org_id, season)
+    levels = {player_id: sport_id for player_id, (sport_id, _) in state.items()}
+    injured = {player_id: label for player_id, (_, label) in state.items() if label}
+    return levels, injured
 
 
 def game_logs(

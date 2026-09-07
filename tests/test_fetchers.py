@@ -434,3 +434,56 @@ def test_a_pitcher_is_weighted_by_batters_faced(monkeypatch):
         },
     )
     assert fetchers.club_shares(1, "pitching", 2026, 12) == {1: 200.0, 2: 100.0}
+
+
+def test_an_injured_roster_entry_becomes_an_il_note():
+    """Celesten's feed says 'Injured 7-Day'; that is what the season line needs."""
+    assert (
+        fetchers._injury_label(
+            {"status": {"code": "D7", "description": "Injured 7-Day"}}
+        )
+        == "on 7-day IL"
+    )
+    assert (
+        fetchers._injury_label(
+            {"status": {"code": "D60", "description": "Injured 60-Day"}}
+        )
+        == "on 60-day IL"
+    )
+    assert (
+        fetchers._injury_label({"status": {"code": "A", "description": "Active"}})
+        is None
+    )
+
+
+def test_roster_snapshot_carries_level_and_il_together(api):
+    api.people_payload = [
+        {
+            "id": 806958,
+            "currentTeam": {"id": 619},
+            "rosterEntries": [
+                {
+                    "isActive": True,
+                    "status": {"code": "D7", "description": "Injured 7-Day"},
+                }
+            ],
+        },
+        {
+            "id": 815549,
+            "currentTeam": {"id": 529},
+            "rosterEntries": [
+                {"isActive": True, "status": {"code": "A", "description": "Active"}}
+            ],
+        },
+    ]
+    levels, injured = fetchers.roster_snapshot(
+        [
+            Prospect(4, "Felnin Celesten", "SS", 806958),
+            Prospect(2, "Still Down", "OF", 815549),
+        ],
+        ORG,
+        2026,
+    )
+    assert levels[806958] == 12
+    assert injured[806958] == "on 7-day IL"
+    assert 815549 not in injured

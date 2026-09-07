@@ -34,6 +34,7 @@ def _contexts(
     season: int,
     settings: dict,
     promoted: set[int] | None = None,
+    injured: dict[int, str] | None = None,
     changed_org: set[int] | None = None,
     run: diagnostics.Run | None = None,
 ) -> dict[int, PlayerContext]:
@@ -155,6 +156,7 @@ def _contexts(
                 skills=evaluation.render_skills(result),
                 priors=priors,
                 promoted=player_id in (promoted or set()),
+                injured=(injured or {}).get(player_id),
             )
     return contexts
 
@@ -192,7 +194,7 @@ def build_digest(
         rankings.load(),
     )
 
-    levels = fetchers.current_levels(tracked, org_id, season)
+    levels, injured = fetchers.roster_snapshot(tracked, org_id, season)
     promoted = fetchers.in_majors(levels)
     logs = fetchers.game_logs(tracked, org_id, season, levels=levels)
     added = store.save(season, logs)
@@ -235,6 +237,7 @@ def build_digest(
         season,
         settings,
         promoted=promoted,
+        injured=injured,
         changed_org=changed_org,
         run=run,
     )
