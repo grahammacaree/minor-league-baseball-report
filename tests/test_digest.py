@@ -373,3 +373,22 @@ def test_a_player_is_linked_to_his_page():
 def test_a_player_without_an_id_is_named_but_not_linked():
     """An unassigned draftee has no page, and a guessed link is worse than none."""
     assert digest_module._named("RHP", "Nobody Yet", None) == "RHP Nobody Yet"
+
+
+def test_an_injured_watchlist_player_is_marked_on_his_season_line():
+    digest = digest_module.build(
+        REPORT_DATE,
+        [Prospect(1, "Felnin Celesten", "SS", 806958)],
+        [],
+        [],
+        SETTINGS,
+        contexts={
+            806958: digest_module.PlayerContext(
+                production="AA (TEX): 95 wRC+ in 120 PA",
+                injured="on 7-day IL",
+            )
+        },
+    )
+    entry = digest.seasons[0]
+    assert "on 7-day IL" in entry
+    assert "promoted to MLB" not in entry

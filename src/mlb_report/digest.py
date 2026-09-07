@@ -47,6 +47,8 @@ class PlayerContext:
     # promotion is the case where the stint behind him is the better evidence.
     priors: list[str] = field(default_factory=list)
     promoted: bool = False
+    # Short IL note ("on 7-day IL"), when the active roster entry says so.
+    injured: str | None = None
 
 
 @dataclass
@@ -180,6 +182,10 @@ def _season_entry(
     if context and context.promoted:
         # Nothing about his day belongs here: those games are on television.
         header += f" — promoted to {MAJORS}"
+    elif context and context.injured:
+        # Same shape as the promotion note: a reason he is not in Played
+        # yesterday, kept next to the name rather than buried in Moves.
+        header += f" — {context.injured}"
 
     body = [header]
     if context and context.production:
