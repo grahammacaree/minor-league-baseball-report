@@ -157,7 +157,7 @@ digest that is too long or too short.
 | `min_rolling_plate_appearances` | 15 | Sample before a rolling split is reported at all |
 | `min_rolling_ops` | 0.90 | OPS at or above which a hitter is hot |
 | `max_rolling_ops` | 0.55 | OPS at or below which a hitter is cold |
-| `moves_lookback_days` | 2 | How far back transactions are read for the digest |
+| `moves_lookback_days` | 1 | How far back transactions are read for the digest |
 
 These are absolute counting-stat cutoffs applied identically at every level,
 with no league or park context. Two hits is two hits whether they came in the
