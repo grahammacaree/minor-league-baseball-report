@@ -206,10 +206,11 @@ def test_unresolved_prospects_are_flagged_as_a_note():
     assert "Unrostered Kid" in digest.warnings[0]
 
 
-def test_a_digest_with_only_the_watchlist_playing_counts_as_quiet():
-    """They play most days; that on its own is not why an email should arrive."""
-    assert build([hitting(2, hits=1, summary="1-4")]).is_empty
+def test_a_digest_with_only_the_watchlist_playing_is_still_worth_sending():
+    """The watchlist is why the mail exists; their lines count even alone."""
+    assert not build([hitting(2, hits=1, summary="1-4")]).is_empty
     assert not build([hitting(3, hits=4)]).is_empty
+    assert build([]).is_empty
 
 
 def test_render_includes_every_section():
