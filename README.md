@@ -123,8 +123,9 @@ the addresses. This repository is public and its workflow logs are readable by a
 [docs/SECURITY.md](docs/SECURITY.md) sets out what that means for the credentials and
 for the reader list.
 
-Nothing is sent on a night when nothing cleared the bar. The minor league season ends in
-September, so the alternative is an empty digest every morning until April. Set
+Nothing is sent on a night when nobody played and there were no roster moves. The minor
+league season ends in September, so the alternative is an empty digest every morning
+until April. Watchlist lines count — the mail exists to carry them. Set
 `send_when_quiet` to `true` in `user.json` if you would rather have the mail regardless.
 
 ## Usage

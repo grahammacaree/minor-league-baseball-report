@@ -74,11 +74,18 @@ class Digest:
         """
         Whether the day is quiet enough to skip sending.
 
-        The watchlist playing is not news — they play most days. What makes an
-        email worth arriving is somebody outside it forcing his way in, a roster
-        move, or a new prospect in the system.
+        Anyone in Played yesterday is enough — the watchlist is why the digest
+        exists, so Farmelo's line counts even when nobody below him stood out.
+        Roster moves and arrivals still count too. A day with none of those is
+        the offseason case the quiet skip is for.
         """
-        return not (self.standouts or self.moves or self.arrivals or self.departures)
+        return not (
+            self.played
+            or self.standouts
+            or self.moves
+            or self.arrivals
+            or self.departures
+        )
 
 
 def _by_player(logs: list[GameLog]) -> dict[int, list[GameLog]]:
